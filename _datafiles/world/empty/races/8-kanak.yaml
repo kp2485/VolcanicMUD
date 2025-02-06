@@ -1,0 +1,30 @@
+raceid: 8
+name: Kanak
+description: >
+  A people of resilience and fierce independence, the Kanak are profoundly connected to their land.
+  Their innate bond with nature not only aids in survival but also provides them with unique combat insights.
+defaultalignment: 0
+buffids:
+  - 38  # Land Bond (Enhanced survival in natural environments)
+  - 49  # Natural Warrior (Improved defense and counterattack capabilities)
+size: medium
+unarmedname: fists
+angrycommands:
+  - emote digs their fingers into the soil.
+  - shout This land is sacred!
+  - shout You shall not take what is not yours!
+selectable: true
+knowsfirstaid: true
+tnlscale: 1.0
+tameable: false
+stats:
+  vitality:
+    base: 2
+  strength:
+    base: 1
+damage:
+  diceroll: 1d3
+disabledslots: []
+Cultural Basis: >
+  Emerging from centuries of resistance against colonial forces, the Kanak's commitment to land
+  stewardship translates into a rugged, resourceful fighting style that makes the most of natural terrain.

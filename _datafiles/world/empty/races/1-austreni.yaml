@@ -1,0 +1,37 @@
+raceid: 1
+name: Austreni
+description: >
+  A widespread people known for their adaptability, linguistic diversity, and seafaring mastery.
+  Ever resourceful in battle, they combine quick thinking with an innate understanding of the
+  terrain—whether on open water or rugged shores.
+defaultalignment: 0
+buffids:
+  - 41  # Linguistic Gift (Can learn new languages quickly)
+  - 30  # Wayfinder (Innate sense of direction)
+  - 51  # Adaptive Combat (Quickly adapts to opponents’ fighting styles)
+size: medium
+unarmedname: fists
+angrycommands:
+  - emote straightens their posture, assessing the situation.
+  - shout The tides favor me today!
+  - shout I know my path—both in life and in combat!
+selectable: true
+knowsfirstaid: true
+tnlscale: 1.0
+tameable: false
+stats:
+  smarts:
+    base: 1
+  perception:
+    base: 2
+  speed:
+    base: 1
+damage:
+  diceroll: 1d3
+disabledslots: []
+Cultural Basis: >
+  Representing the broader Austronesian expansion, the Austreni were pioneers who charted unknown
+  waters. Their seafaring legacy is matched by their ability to learn from every encounter, both in
+  trade and on the battlefield.
+
+

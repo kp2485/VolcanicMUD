@@ -1,0 +1,31 @@
+raceid: 4
+name: Chamorro
+description: >
+  An adaptable and resilient island people with a long history of survival and resistance.
+  In combat, their resourcefulness transforms environmental challenges into tactical advantages.
+defaultalignment: 0
+buffids:
+  - 33  # Resourcefulness (Finds and utilizes items more effectively)
+  - 45  # Island Resilience (Increased durability and recovery during combat)
+size: medium
+unarmedname: fists
+angrycommands:
+  - emote takes a firm stance, unshaken.
+  - shout The ancestors give me strength!
+  - shout This land is ours to protect!
+selectable: true
+knowsfirstaid: true
+tnlscale: 1.0
+tameable: false
+stats:
+  vitality:
+    base: 2
+  smarts:
+    base: 1
+damage:
+  diceroll: 1d3
+disabledslots: []
+Cultural Basis: >
+  Having endured centuries of change, the Chamorro adapt to all challenges. Their history of
+  colonization and resistance fuels their fighting spirit on every battlefield.
+

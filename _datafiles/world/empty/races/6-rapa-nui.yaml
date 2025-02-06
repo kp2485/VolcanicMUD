@@ -1,0 +1,30 @@
+raceid: 6
+name: Rapa Nui
+description: >
+  The builders of the Moai, the Rapa Nui are deeply connected to their ancestors.
+  Their spiritual heritage provides them with an unyielding inner strength that manifests in combat.
+defaultalignment: 5
+buffids:
+  - 36  # Ancestral Blessing (Increased resilience under pressure)
+  - 47  # Ancestral Might (Temporarily boosts strength when outnumbered)
+size: medium
+unarmedname: fists
+angrycommands:
+  - emote places their hand on their chest, whispering.
+  - shout The Moai stand eternal!
+  - shout My ancestors watch over me!
+selectable: true
+knowsfirstaid: true
+tnlscale: 1.1
+tameable: false
+stats:
+  perception:
+    base: 2
+  vitality:
+    base: 1
+damage:
+  diceroll: 1d3
+disabledslots: []
+Cultural Basis: >
+  Known for their monumental Moai statues, the Rapa Nui draw strength from the wisdom of their
+  forebears, channeling ancient power into every battle.
