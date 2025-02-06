@@ -34,7 +34,7 @@ Version: "1.0.0"
 #   The folder where all datafiles reside.
 #   If you are planning to create your own world, copying the current folder
 #   and its entire tree of content is a good place to start.
-FolderDataFiles: _datafiles/world/default
+FolderDataFiles: _datafiles/world/volcanic
 # - FolderHtmlFiles - 
 #   The folder where all web html files reside.
 FolderHtmlFiles: _datafiles/html
