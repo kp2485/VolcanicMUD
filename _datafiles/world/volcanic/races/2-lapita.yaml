@@ -1,0 +1,34 @@
+raceid: 2
+name: Lapita
+description: >
+  Descendants of a seafaring people, the Lapita are masters of navigation and craftsmanship.
+  Their skilled hands not only forge superior tools and weapons but also hone reflexes honed by
+  unpredictable ocean battles.
+defaultalignment: 10
+buffids:
+  - 30  # Wayfinder (Innate sense of direction)
+  - 31  # Master Craftsman (Superior tool and weapon creation)
+  - 43  # Oceanic Agility (Enhanced dodging and mobility in combat)
+size: medium
+unarmedname: fists
+angrycommands:
+  - emote clenches their jaw, studying the surroundings.
+  - shout The waves have brought me here for a reason!
+  - shout You will not stand in my way!
+selectable: true
+knowsfirstaid: true
+tnlscale: 1.1
+tameable: false
+stats:
+  perception:
+    base: 2
+  smarts:
+    base: 1
+  vitality:
+    base: 1
+damage:
+  diceroll: 1d3
+disabledslots: []
+Cultural Basis: >
+  Rooted in the traditions of ancient Austronesian navigators, the Lapita spread their culture
+  across vast islands. Their heritage of precision in both art and combat is legendary.

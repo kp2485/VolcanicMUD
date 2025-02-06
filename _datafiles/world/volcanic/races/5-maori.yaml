@@ -1,0 +1,33 @@
+raceid: 5
+name: Maori
+description: >
+  A fierce and proud warrior culture with strong oral traditions and an indomitable spirit.
+  Their battle cries and mesmerizing haka inspire allies and strike fear into their foes.
+defaultalignment: 10
+buffids:
+  - 34  # Haka (Intimidates opponents)
+  - 35  # Oral Tradition (Greater ability to recall and share knowledge)
+  - 46  # Warrior Spirit (Boosts morale and enhances combat damage)
+size: medium
+unarmedname: fists
+angrycommands:
+  - emote stomps the ground, glaring.
+  - shout Face me with honor!
+  - shout You will remember this day!
+selectable: true
+knowsfirstaid: true
+tnlscale: 1.2
+tameable: false
+stats:
+  strength:
+    base: 2
+  vitality:
+    base: 1
+  smarts:
+    base: 1
+damage:
+  diceroll: 1d4
+disabledslots: []
+Cultural Basis: >
+  With a legacy built on fierce battles and vibrant oral histories, the Maori employ the haka not
+  only as a cultural ritual but as a powerful weapon in psychological warfare.

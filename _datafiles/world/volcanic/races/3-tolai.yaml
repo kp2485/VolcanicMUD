@@ -1,0 +1,33 @@
+raceid: 3
+name: Tolai
+description: >
+  A disciplined and strategic people, the Tolai are renowned for their complex trade systems,
+  organization, and precise combat tactics. Their measured strikes and defensive formations
+  reflect a lifetime of disciplined training.
+defaultalignment: 5
+buffids:
+  - 32  # Trade Dominance (Better deals when bartering)
+  - 44  # Strategic Strike (Enhanced combat maneuvering and precision)
+size: medium
+unarmedname: fists
+angrycommands:
+  - emote squares their shoulders, preparing for confrontation.
+  - shout You insult my honor!
+  - shout You have no place in this land!
+selectable: true
+knowsfirstaid: true
+tnlscale: 1.1
+tameable: false
+stats:
+  smarts:
+    base: 2
+  perception:
+    base: 1
+  strength:
+    base: 1
+damage:
+  diceroll: 1d3
+disabledslots: []
+Cultural Basis: >
+  The Tolai built vast trade networks and were masters of political strategy. Their battle tactics
+  mirror their economic negotiations: calculated, precise, and effective.

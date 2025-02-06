@@ -1,0 +1,30 @@
+raceid: 7
+name: Solomonis
+description: >
+  Masters of wooden architecture and tactical raiding, the Solomonis excel at ambushes and swift,
+  calculated strikes that catch their foes off guard.
+defaultalignment: -5
+buffids:
+  - 37  # Tactical Raider (Bonus to ambush and flanking attacks)
+  - 48  # Raiding Ferocity (Increases damage during surprise attacks)
+size: medium
+unarmedname: fists
+angrycommands:
+  - emote eyes the battlefield for weaknesses.
+  - shout Strike when they least expect it!
+  - shout We are shadows on the waves!
+selectable: true
+knowsfirstaid: false
+tnlscale: 1.2
+tameable: false
+stats:
+  speed:
+    base: 2
+  perception:
+    base: 1
+damage:
+  diceroll: 1d3
+disabledslots: []
+Cultural Basis: >
+  Renowned for their naval raids and guerrilla tactics, the Solomonis use their deep knowledge of
+  both land and sea to strike with lethal precision.
