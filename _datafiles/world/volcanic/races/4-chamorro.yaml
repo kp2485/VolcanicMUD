@@ -5,8 +5,8 @@ description: >
   In combat, their resourcefulness transforms environmental challenges into tactical advantages.
 defaultalignment: 0
 buffids:
-  - 33  # Resourcefulness (Finds and utilizes items more effectively)
-  - 45  # Island Resilience (Increased durability and recovery during combat)
+  - 18  # Resourcefulness (Finds and utilizes items more effectively)
+  - 19  # Island Resilience (Increased durability and recovery during combat)
 size: medium
 unarmedname: fists
 angrycommands:

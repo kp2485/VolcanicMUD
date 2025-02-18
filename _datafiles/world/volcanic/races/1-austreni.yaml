@@ -6,9 +6,9 @@ description: >
   terrain—whether on open water or rugged shores.
 defaultalignment: 0
 buffids:
-  - 41  # Linguistic Gift (Can learn new languages quickly)
-  - 30  # Wayfinder (Innate sense of direction)
-  - 51  # Adaptive Combat (Quickly adapts to opponents’ fighting styles)
+  - 10  # Linguistic Gift (Can learn new languages quickly)
+  - 11  # Wayfinder (Innate sense of direction)
+  - 12  # Adaptive Combat (Quickly adapts to opponents’ fighting styles)
 size: medium
 unarmedname: fists
 angrycommands:

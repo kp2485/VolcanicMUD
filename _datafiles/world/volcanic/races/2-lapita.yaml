@@ -6,9 +6,9 @@ description: >
   unpredictable ocean battles.
 defaultalignment: 10
 buffids:
-  - 30  # Wayfinder (Innate sense of direction)
-  - 31  # Master Craftsman (Superior tool and weapon creation)
-  - 43  # Oceanic Agility (Enhanced dodging and mobility in combat)
+  - 13  # Wayfinder (Innate sense of direction)
+  - 14  # Master Craftsman (Superior tool and weapon creation)
+  - 15  # Oceanic Agility (Enhanced dodging and mobility in combat)
 size: medium
 unarmedname: fists
 angrycommands:

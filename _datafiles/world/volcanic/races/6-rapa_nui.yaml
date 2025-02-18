@@ -5,8 +5,8 @@ description: >
   Their spiritual heritage provides them with an unyielding inner strength that manifests in combat.
 defaultalignment: 5
 buffids:
-  - 36  # Ancestral Blessing (Increased resilience under pressure)
-  - 47  # Ancestral Might (Temporarily boosts strength when outnumbered)
+  - 23  # Ancestral Blessing (Increased resilience under pressure)
+  - 24  # Ancestral Might (Temporarily boosts strength when outnumbered)
 size: medium
 unarmedname: fists
 angrycommands:

@@ -5,8 +5,8 @@ description: >
   Their innate bond with nature not only aids in survival but also provides them with unique combat insights.
 defaultalignment: 0
 buffids:
-  - 38  # Land Bond (Enhanced survival in natural environments)
-  - 49  # Natural Warrior (Improved defense and counterattack capabilities)
+  - 27  # Land Bond (Enhanced survival in natural environments)
+  - 28  # Natural Warrior (Improved defense and counterattack capabilities)
 size: medium
 unarmedname: fists
 angrycommands:

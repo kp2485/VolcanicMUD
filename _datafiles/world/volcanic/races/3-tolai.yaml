@@ -6,8 +6,8 @@ description: >
   reflect a lifetime of disciplined training.
 defaultalignment: 5
 buffids:
-  - 32  # Trade Dominance (Better deals when bartering)
-  - 44  # Strategic Strike (Enhanced combat maneuvering and precision)
+  - 16  # Trade Dominance (Better deals when bartering)
+  - 17  # Strategic Strike (Enhanced combat maneuvering and precision)
 size: medium
 unarmedname: fists
 angrycommands:

@@ -5,9 +5,9 @@ description: >
   In battle, their mastery of rugged terrain gives them a unique advantage, allowing them to outlast their foes.
 defaultalignment: 10
 buffids:
-  - 39  # Highland Endurance (Less affected by difficult terrain)
-  - 40  # Master Engineer (Can build fortifications faster)
-  - 50  # Mountain Endurance (Enhanced combat effectiveness in hilly or mountainous areas)
+  - 20  # Highland Endurance (Less affected by difficult terrain)
+  - 30  # Master Engineer (Can build fortifications faster)
+  - 31  # Mountain Endurance (Enhanced combat effectiveness in hilly or mountainous areas)
 size: medium
 unarmedname: fists
 angrycommands:

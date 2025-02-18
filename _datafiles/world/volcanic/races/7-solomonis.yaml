@@ -5,8 +5,8 @@ description: >
   calculated strikes that catch their foes off guard.
 defaultalignment: -5
 buffids:
-  - 37  # Tactical Raider (Bonus to ambush and flanking attacks)
-  - 48  # Raiding Ferocity (Increases damage during surprise attacks)
+  - 25  # Tactical Raider (Bonus to ambush and flanking attacks)
+  - 26  # Raiding Ferocity (Increases damage during surprise attacks)
 size: medium
 unarmedname: fists
 angrycommands:

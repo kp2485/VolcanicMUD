@@ -5,9 +5,9 @@ description: >
   Their battle cries and mesmerizing haka inspire allies and strike fear into their foes.
 defaultalignment: 10
 buffids:
-  - 34  # Haka (Intimidates opponents)
-  - 35  # Oral Tradition (Greater ability to recall and share knowledge)
-  - 46  # Warrior Spirit (Boosts morale and enhances combat damage)
+  - 20  # Haka (Intimidates opponents)
+  - 21  # Oral Tradition (Greater ability to recall and share knowledge)
+  - 22  # Warrior Spirit (Boosts morale and enhances combat damage)
 size: medium
 unarmedname: fists
 angrycommands:
