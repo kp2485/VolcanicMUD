@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/rooms"
 	"github.com/volte6/gomud/internal/skills"
 	"github.com/volte6/gomud/internal/util"
@@ -13,7 +14,7 @@ import (
 	"github.com/volte6/gomud/internal/users"
 )
 
-func Skillset(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Skillset(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
 	// args should look like one of the following:
 	// target buffId - put buff on target if in the room
@@ -34,11 +35,24 @@ func Skillset(rest string, user *users.UserRecord, room *rooms.Room) (bool, erro
 		return true, nil
 	}
 
+	var targetUser *users.UserRecord = user
+
+	foundUser, _ := room.FindByName(args[0])
+	if foundUser > 0 {
+		targetUser = users.GetByUserId(foundUser)
+		args = args[1:]
+	}
+
 	if args[0] == `all` {
 		skillValueInt, _ := strconv.Atoi(args[1])
 
 		for _, skillName := range skills.GetAllSkillNames() {
-			user.Character.SetSkill(string(skillName), skillValueInt)
+			targetUser.Character.SetSkill(string(skillName), skillValueInt)
+			targetUser.SendText(fmt.Sprintf(`Your "<ansi fg="skill">%s</ansi>" skill level has been set to <ansi fg="red">%d</ansi>.`, skillName, skillValueInt))
+		}
+
+		if targetUser.UserId != user.UserId {
+			user.SendText("done.")
 		}
 
 		return true, nil
@@ -50,9 +64,14 @@ func Skillset(rest string, user *users.UserRecord, room *rooms.Room) (bool, erro
 	found := skills.SkillExists(skillName)
 
 	if found {
-		user.Character.SetSkill(skillName, skillValueInt)
+		targetUser.Character.SetSkill(skillName, skillValueInt)
+		targetUser.SendText(fmt.Sprintf(`Your "<ansi fg="skill">%s</ansi>" skill level has been set to <ansi fg="red">%d</ansi>.`, skillName, skillValueInt))
+
+		if targetUser.UserId != user.UserId {
+			user.SendText("done.")
+		}
 	} else {
-		user.SendText(fmt.Sprintf(`Skill "%s" not found.`, skillName))
+		targetUser.SendText(fmt.Sprintf(`Skill "%s" not found.`, skillName))
 	}
 
 	return true, nil

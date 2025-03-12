@@ -9,6 +9,7 @@ import (
 
 	"github.com/volte6/gomud/internal/characters"
 	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/mobs"
 	"github.com/volte6/gomud/internal/races"
 	"github.com/volte6/gomud/internal/rooms"
@@ -19,7 +20,7 @@ import (
 	"github.com/volte6/gomud/internal/util"
 )
 
-func Start(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Start(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
 	if user.Character.RoomId != -1 {
 		return false, errors.New(`only allowed in the void`)
@@ -35,10 +36,15 @@ func Start(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) 
 
 	if user.Character.RaceId == 0 {
 
-		raceOptions := []races.Race{}
+		raceOptions := []templates.NameDescription{}
+
 		for _, r := range races.GetRaces() {
 			if r.Selectable {
-				raceOptions = append(raceOptions, r)
+				raceOptions = append(raceOptions, templates.NameDescription{
+					Id:          r.RaceId,
+					Name:        r.Name,
+					Description: r.Description,
+				})
 			}
 		}
 		sort.SliceStable(raceOptions, func(i, j int) bool {
@@ -70,7 +76,7 @@ func Start(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) 
 			}
 
 			question.RejectResponse()
-			return Help(helpCmd+` `+helpRest, user, room)
+			return Help(helpCmd+` `+helpRest, user, room, flags)
 		}
 
 		raceNameSelection := question.Response
@@ -166,7 +172,7 @@ func Start(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) 
 
 		if question.Response == `no` {
 			user.ClearPrompt()
-			return Start(rest, user, room)
+			return Start(rest, user, room, flags)
 		}
 
 		if err := user.SetCharacterName(usernameSelected); err != nil {
@@ -180,13 +186,13 @@ func Start(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) 
 		user.SendText(fmt.Sprintf(`You will be known as <ansi fg="yellow-bold">%s</ansi>!%s`, user.Character.Name, term.CRLFStr))
 	}
 
-	user.Character.ExtraLives = int(configs.GetConfig().LivesStart)
+	user.Character.ExtraLives = int(configs.GetGamePlayConfig().LivesStart)
 
 	user.EventLog.Add(`char`, fmt.Sprintf(`Created a new character: <ansi fg="username">%s</ansi>`, user.Character.Name))
 
 	user.SendText(fmt.Sprintf(`<ansi fg="magenta">Suddenly, a vortex appears before you, drawing you in before you have any chance to react!</ansi>%s`, term.CRLFStr))
 
-	for _, ridStr := range configs.GetConfig().TutorialStartRooms {
+	for _, ridStr := range configs.GetSpecialRoomsConfig().TutorialStartRooms {
 
 		rid, _ := strconv.ParseInt(ridStr, 10, 64)
 		skip := false
@@ -206,7 +212,6 @@ func Start(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) 
 		}
 
 		if _, err := scripting.TryRoomScriptEvent(`onEnter`, user.UserId, int(rid)); err == nil {
-
 			rooms.MoveToRoom(user.UserId, int(rid))
 			return true, nil
 		}

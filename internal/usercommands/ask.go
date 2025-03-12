@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/keywords"
 	"github.com/volte6/gomud/internal/mobs"
 	"github.com/volte6/gomud/internal/rooms"
@@ -14,7 +15,7 @@ import (
 	"github.com/volte6/gomud/internal/users"
 )
 
-func Ask(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Ask(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
 	// Core "useful" commands
 	usefulCommands := []string{
@@ -104,7 +105,8 @@ func Ask(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 
 			if mobCmd == `attack` {
 				if pid, _ := room.FindByName(askRest); pid > 0 {
-					if configs.GetConfig().PVP != `enabled` {
+
+					if configs.GetGamePlayConfig().PVP != `enabled` {
 
 						mob.Command(`emote shakes their head.`)
 						mob.Command(`say PVP is currently disabled.`)
@@ -127,7 +129,6 @@ func Ask(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 
 		rest = strings.Join(args, ` `)
 		if handled, err := scripting.TryMobScriptEvent(`onAsk`, mobId, user.UserId, `user`, map[string]any{"askText": rest}); err == nil {
-
 			if !handled {
 				mob.Command(`emote shakes their head.`)
 			}

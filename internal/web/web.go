@@ -4,39 +4,131 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/util"
 )
 
 var (
-	httpServer *http.Server
+	httpServer  *http.Server
+	httpsServer *http.Server
 
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
 	}
+
+	httpRoot string
 )
 
-func Listen(webPort int, wg *sync.WaitGroup, webSocketHandler func(*websocket.Conn)) {
+// serveTemplate searches for the requested file in the HTTP_ROOT,
+// parses it as a template, and serves it.
+func serveTemplate(w http.ResponseWriter, r *http.Request) {
 
-	slog.Info("Starting web server", "webport", webPort)
+	if httpRoot == "" {
 
-	wg.Add(1)
+		httpRoot = filepath.Clean(configs.GetFilePathsConfig().FolderPublicHtml.String())
+	}
 
-	// HTTP Server
-	httpServer = &http.Server{Addr: fmt.Sprintf(`:%d`, webPort)}
+	// Clean the path to prevent directory traversal.
+	reqPath := filepath.Clean(r.URL.Path) // Example: / or /info/faq
+
+	// Build the full file path.
+	fullPath := filepath.Join(httpRoot, reqPath)
+
+	// If the path is a directory, look for an index.html.
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		if filepath.Ext(fullPath) != ".html" {
+			fullPath += ".html"
+		}
+	} else if info.IsDir() {
+		fullPath = filepath.Join(fullPath, "index.html")
+	}
+
+	fileExt := filepath.Ext(fullPath)
+	fileBase := filepath.Base(fullPath)
+
+	// Check if the file exists, else 404
+	fInfo, err := os.Stat(fullPath)
+	if err != nil || len(fileBase) > 0 && fileBase[0] == '_' {
+		mudlog.Info("Web", "ip", r.RemoteAddr, "ref", r.Header.Get("Referer"), "filePath", fullPath, "fileExtension", fileExt, "error", "Not found")
+
+		fullPath = filepath.Join(httpRoot, `404.html`)
+		fInfo, err = os.Stat(fullPath)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}
+
+	// Log the request
+	mudlog.Info("Web", "ip", r.RemoteAddr, "ref", r.Header.Get("Referer"), "filePath", fullPath, "fileExtension", fileExt, "size", fmt.Sprintf(`%.2fk`, float64(fInfo.Size())/1024))
+
+	// For non-HTML files, serve them statically.
+	if fileExt != ".html" {
+		http.ServeFile(w, r, fullPath)
+		return
+	}
+
+	templateData := map[string]interface{}{
+		"REQUEST": r,
+		"CONFIG":  configs.GetConfig(),
+		"STATS":   GetStats(),
+	}
+
+	templateFiles := []string{}
+
+	// Parse special files intended to be used as template includes
+	globFiles, err := filepath.Glob(filepath.Join(httpRoot, "_*.html"))
+	if err == nil {
+		templateFiles = append(templateFiles, globFiles...)
+	}
+
+	// Parse special files intended to be used as template includes (from the request folder)
+	requestDir := filepath.Dir(fullPath)
+	if httpRoot != requestDir {
+		globFiles, err = filepath.Glob(filepath.Join(requestDir, "_*.html"))
+		if err == nil {
+			templateFiles = append(templateFiles, globFiles...)
+		}
+	}
+
+	// Add the final (actual) file
+	templateFiles = append(templateFiles, fullPath)
+
+	// Parse
+	tmpl, err := template.New(filepath.Base(fullPath)).Funcs(funcMap).ParseFiles(templateFiles...)
+
+	if err != nil {
+		mudlog.Error("HTML ERROR", "action", "ParseFiles", "error", err)
+		http.Error(w, "Error executing template", http.StatusInternalServerError)
+	}
+
+	// Execute the template and write it to the response.
+	if err := tmpl.Execute(w, templateData); err != nil {
+		mudlog.Error("HTML ERROR", "action", "Execute", "error", err)
+		http.Error(w, "Error executing template", http.StatusInternalServerError)
+	}
+}
+
+func Listen(webPort int, webHttpsPort int, wg *sync.WaitGroup, webSocketHandler func(*websocket.Conn)) {
+
 	// Routing
 	// Basic homepage
-	http.HandleFunc("/", serveHome)
-	// websocket client
-	http.HandleFunc("/webclient", serveClient)
+	http.HandleFunc("/", serveTemplate)
+
 	// websocket upgrade
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 
@@ -50,15 +142,10 @@ func Listen(webPort int, wg *sync.WaitGroup, webSocketHandler func(*websocket.Co
 		webSocketHandler(conn)
 	})
 
-	// Static resources
-	http.Handle("GET /static/public/", handlerToHandlerFunc(
-		http.StripPrefix("/static/public/", http.FileServer(http.Dir(configs.GetConfig().FolderHtmlFiles.String()+"/static/public"))),
-	))
-
-	http.Handle("GET /static/admin/", RunWithMUDLocked(
+	http.Handle("GET /admin/static/", RunWithMUDLocked(
 		doBasicAuth(
 			handlerToHandlerFunc(
-				http.StripPrefix("/static/admin/", http.FileServer(http.Dir(configs.GetConfig().FolderHtmlFiles.String()+"/static/admin"))),
+				http.StripPrefix("/admin/static/", http.FileServer(http.Dir(configs.GetFilePathsConfig().FolderAdminHtml.String()+"/static"))),
 			),
 		),
 	))
@@ -108,12 +195,47 @@ func Listen(webPort int, wg *sync.WaitGroup, webSocketHandler func(*websocket.Co
 		doBasicAuth(roomData),
 	))
 
+	// HTTP Server
+	wg.Add(1)
+	httpServer = &http.Server{Addr: fmt.Sprintf(`:%d`, webPort)}
 	go func() {
+
+		mudlog.Info("Starting http server", "webport", webPort)
+
 		defer wg.Done()
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("Error starting web server", "error", err)
+			mudlog.Error("Error starting web server", "error", err)
 		}
 	}()
+
+	if webHttpsPort > 0 {
+
+		filePaths := configs.GetFilePathsConfig()
+
+		certFile := ``
+		keyFile := ``
+
+		if _, err := os.Stat(string(filePaths.HttpsCertFile)); err == nil {
+			certFile = string(filePaths.HttpsCertFile)
+		}
+		if _, err := os.Stat(string(filePaths.HttpsKeyFile)); err == nil {
+			keyFile = string(filePaths.HttpsKeyFile)
+		}
+
+		if certFile != `` && keyFile != `` {
+			wg.Add(1)
+			httpsServer = &http.Server{Addr: fmt.Sprintf(`:%d`, webHttpsPort)}
+			go func() {
+
+				mudlog.Info("Starting https server", "webHttpsPort", webHttpsPort)
+
+				defer wg.Done()
+				if err := httpsServer.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
+					mudlog.Error("Error starting HTTPS web server", "error", err)
+				}
+			}()
+		}
+	}
 
 }
 
@@ -134,12 +256,22 @@ func Shutdown() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Printf("HTTP server shutdown failed:%+v", err)
+	if httpServer != nil {
+		if err := httpServer.Shutdown(ctx); err != nil {
+			log.Printf("HTTP server shutdown failed:%+v", err)
+		}
 	}
 
+	if httpsServer != nil {
+		if err := httpsServer.Shutdown(ctx); err != nil {
+			log.Printf("HTTPS server shutdown failed:%+v", err)
+		}
+	}
 }
 
-func DataFiles() string {
-	return configs.GetConfig().FolderDataFiles.String()
+func sendError(w http.ResponseWriter, r *http.Request, status int) {
+	w.WriteHeader(status)
+	if status == http.StatusNotFound {
+		fmt.Fprint(w, "custom 404")
+	}
 }

@@ -1,5 +1,13 @@
 package events
 
+import (
+	"time"
+
+	"github.com/volte6/gomud/internal/connections"
+	"github.com/volte6/gomud/internal/items"
+	"github.com/volte6/gomud/internal/stats"
+)
+
 // Used to apply or remove buffs
 type Buff struct {
 	UserId        int
@@ -24,7 +32,7 @@ type RoomAction struct {
 	SourceMobId  int
 	Action       string
 	Details      any
-	WaitTurns    int
+	ReadyTurn    uint64
 }
 
 func (r RoomAction) Type() string { return `RoomAction` }
@@ -34,7 +42,8 @@ type Input struct {
 	UserId        int
 	MobInstanceId int
 	InputText     string
-	WaitTurns     int
+	ReadyTurn     uint64
+	Flags         EventFlag
 }
 
 func (i Input) Type() string { return `Input` }
@@ -42,6 +51,8 @@ func (i Input) Type() string { return `Input` }
 // Messages that are intended to reach all users on the system
 type Broadcast struct {
 	Text            string
+	IsCommunication bool
+	SourceIsMod     bool
 	SkipLineRefresh bool
 }
 
@@ -58,35 +69,175 @@ type Message struct {
 
 func (m Message) Type() string { return `Message` }
 
-// Messages that are intended to reach all users on the system
+// Special commands that only the webclient is equipped to handle
 type WebClientCommand struct {
 	ConnectionId uint64
 	Text         string
 }
 
-func (b WebClientCommand) Type() string { return `WebClientCommand` }
+func (w WebClientCommand) Type() string { return `WebClientCommand` }
 
-// Messages that are intended to reach all users on the system
+// GMCP Commands from clients to server
 type GMCPIn struct {
 	ConnectionId uint64
 	Command      string
 	Json         []byte
 }
 
-func (b GMCPIn) Type() string { return `GMCP` }
+func (g GMCPIn) Type() string { return `GMCPIn` }
 
-// Messages that are intended to reach all users on the system
+// GMCP Commands from server to client
 type GMCPOut struct {
-	ConnectionId uint64
-	UserId       int
-	Payload      any
+	UserId  int
+	Payload any
 }
 
-func (b GMCPOut) Type() string { return `GMCP` }
+func (g GMCPOut) Type() string { return `GMCPOut` }
 
 // Messages that are intended to reach all users on the system
 type System struct {
 	Command string
+	Data    any
 }
 
 func (s System) Type() string { return `System` }
+
+// Payloads describing sound/music to play
+type MSP struct {
+	UserId    int
+	SoundType string // SOUND or MUSIC
+	SoundFile string
+	Volume    int    // 1-100
+	Category  string // special category/type for MSP string
+}
+
+func (m MSP) Type() string { return `MSP` }
+
+// Fired whenever a mob or player changes rooms
+type RoomChange struct {
+	UserId        int
+	MobInstanceId int
+	FromRoomId    int
+	ToRoomId      int
+}
+
+func (r RoomChange) Type() string { return `RoomChange` }
+
+// Fired every new round
+type NewRound struct {
+	RoundNumber uint64
+	TimeNow     time.Time
+}
+
+func (n NewRound) Type() string { return `NewRound` }
+
+// Each new turn (TurnMs in config.yaml)
+type NewTurn struct {
+	TurnNumber uint64
+	TimeNow    time.Time
+}
+
+func (n NewTurn) Type() string { return `NewTurn` }
+
+// Gained or lost an item
+type ItemOwnership struct {
+	UserId        int
+	MobInstanceId int
+	Item          items.Item
+	Gained        bool
+}
+
+func (i ItemOwnership) Type() string { return `ItemOwnership` }
+
+// Triggered by a script
+type ScriptedEvent struct {
+	Name string
+	Data map[string]any
+}
+
+func (s ScriptedEvent) Type() string { return `ScriptedEvent` }
+
+// Entered the world
+type PlayerSpawn struct {
+	UserId        int
+	RoomId        int
+	Username      string
+	CharacterName string
+}
+
+func (p PlayerSpawn) Type() string { return `PlayerSpawn` }
+
+// Left the world
+type PlayerDespawn struct {
+	UserId        int
+	RoomId        int
+	Username      string
+	CharacterName string
+}
+
+func (p PlayerDespawn) Type() string { return `PlayerDespawn` }
+
+type Log struct {
+	FollowAdd    connections.ConnectionId
+	FollowRemove connections.ConnectionId
+	Level        string
+	Data         []any
+}
+
+func (l Log) Type() string { return `Log` }
+
+type LevelUp struct {
+	UserId         int
+	RoomId         int
+	Username       string
+	CharacterName  string
+	LevelsGained   int
+	NewLevel       int
+	StatsDelta     stats.Statistics
+	TrainingPoints int
+	StatPoints     int
+	LivesGained    int
+}
+
+func (l LevelUp) Type() string { return `LevelUp` }
+
+type PlayerDeath struct {
+	UserId        int
+	RoomId        int
+	Username      string
+	CharacterName string
+	Permanent     bool
+	KilledByUsers []int
+}
+
+func (l PlayerDeath) Type() string { return `PlayerDeath` }
+
+type DayNightCycle struct {
+	IsSunrise bool
+	Day       int
+	Month     int
+	Year      int
+	Time      string
+}
+
+func (l DayNightCycle) Type() string { return `DayNightCycle` }
+
+type Auction struct {
+	State           string // START, REMINDER, BID, END
+	ItemName        string
+	ItemDescription string
+	SellerName      string
+	BuyerName       string
+	BidAmount       int
+}
+
+func (l Auction) Type() string { return `Auction` }
+
+type Looking struct {
+	UserId int
+	RoomId int
+	Target string
+	Hidden bool
+}
+
+func (l Looking) Type() string { return `Looking` }

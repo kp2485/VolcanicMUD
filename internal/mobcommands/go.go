@@ -121,7 +121,7 @@ func Go(rest string, mob *mobs.Mob, room *rooms.Room) (bool, error) {
 		room.RemoveMob(mob.InstanceId)
 		destRoom.AddMob(mob.InstanceId)
 
-		c := configs.GetConfig()
+		c := configs.GetTextFormatsConfig()
 
 		// Tell the old room they are leaving
 		room.SendText(
@@ -137,6 +137,9 @@ func Go(rest string, mob *mobs.Mob, room *rooms.Room) (bool, error) {
 			))
 
 		destRoom.SendTextToExits(`You hear someone moving around.`, true, room.GetPlayers(rooms.FindAll)...)
+
+		room.PlaySound(`room-exit`, `movement`)
+		destRoom.PlaySound(`room-enter`, `movement`)
 
 		return true, nil
 	}

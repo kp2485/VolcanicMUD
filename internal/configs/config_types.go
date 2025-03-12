@@ -8,6 +8,7 @@ import (
 type ConfigInt int
 type ConfigUInt64 uint64
 type ConfigString string
+type ConfigSecret string // special case string
 type ConfigFloat float64
 type ConfigBool bool
 type ConfigSliceString []string
@@ -17,7 +18,47 @@ type ConfigValue interface {
 	Set(string) error
 }
 
+func StringToConfigValue(strVal string, typeName string) ConfigValue {
+
+	switch typeName {
+	case "configs.ConfigInt":
+		v := ConfigInt(0)
+		v.Set(strVal)
+		return &v
+	case "configs.ConfigUInt64":
+		var v ConfigUInt64 = 0
+		v.Set(strVal)
+		return &v
+	case "configs.ConfigString":
+		var v ConfigString = ""
+		v.Set(strVal)
+		return &v
+	case "configs.ConfigSecret":
+		var v ConfigSecret = ""
+		v.Set(strVal)
+		return &v
+	case "configs.ConfigFloat":
+		var v ConfigFloat = 0
+		v.Set(strVal)
+		return &v
+	case "configs.ConfigBool":
+		var v ConfigBool = false
+		v.Set(strVal)
+		return &v
+	case "configs.ConfigSliceString":
+		var v ConfigSliceString = []string{}
+		v.Set(strVal)
+		return &v
+	default:
+		return nil
+	}
+
+}
+
+//
 // String
+//
+
 func (c ConfigUInt64) String() string {
 	return strconv.FormatUint(uint64(c), 10)
 }
@@ -30,6 +71,10 @@ func (c ConfigString) String() string {
 	return string(c)
 }
 
+func (c ConfigSecret) String() string {
+	return `*** REDACTED ***`
+}
+
 func (c ConfigFloat) String() string {
 	return strconv.FormatFloat(float64(c), 'f', -1, 64)
 }
@@ -39,10 +84,15 @@ func (c ConfigBool) String() string {
 }
 
 func (c ConfigSliceString) String() string {
+	if len(c) == 0 {
+		return `[]`
+	}
 	return `["` + strings.Join(c, `", "`) + `"]`
 }
 
+//
 // Set
+//
 
 func (c *ConfigUInt64) Set(value string) error {
 	v, err := strconv.ParseUint(value, 10, 64)
@@ -67,6 +117,11 @@ func (c *ConfigString) Set(value string) error {
 	return nil
 }
 
+func (c *ConfigSecret) Set(value string) error {
+	*c = ConfigSecret(value)
+	return nil
+}
+
 func (c *ConfigFloat) Set(value string) error {
 	v, err := strconv.ParseFloat(value, 64)
 	if err != nil {
@@ -86,6 +141,6 @@ func (c *ConfigBool) Set(value string) error {
 }
 
 func (c *ConfigSliceString) Set(value string) error {
-	*c = strings.Split(value, `;`)
+	*c = strings.Split(value, `,`)
 	return nil
 }

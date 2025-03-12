@@ -2,24 +2,19 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
-	"log/slog"
-
 	"github.com/gorilla/websocket"
-	"github.com/natefinch/lumberjack"
+	"github.com/volte6/gomud/internal/audio"
 	"github.com/volte6/gomud/internal/buffs"
 	"github.com/volte6/gomud/internal/characters"
 	"github.com/volte6/gomud/internal/colorpatterns"
@@ -28,11 +23,14 @@ import (
 	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/flags"
 	"github.com/volte6/gomud/internal/gametime"
+	"github.com/volte6/gomud/internal/hooks"
 	"github.com/volte6/gomud/internal/inputhandlers"
+	"github.com/volte6/gomud/internal/integrations/discord"
 	"github.com/volte6/gomud/internal/items"
 	"github.com/volte6/gomud/internal/keywords"
 	"github.com/volte6/gomud/internal/leaderboard"
 	"github.com/volte6/gomud/internal/mobs"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/mutators"
 	"github.com/volte6/gomud/internal/pets"
 	"github.com/volte6/gomud/internal/quests"
@@ -45,7 +43,6 @@ import (
 	"github.com/volte6/gomud/internal/term"
 	"github.com/volte6/gomud/internal/users"
 	"github.com/volte6/gomud/internal/util"
-	"github.com/volte6/gomud/internal/version"
 	"github.com/volte6/gomud/internal/web"
 )
 
@@ -70,27 +67,33 @@ func main() {
 
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error("PANIC", "error", r)
+			mudlog.Error("PANIC", "error", r)
 		}
 	}()
 
-	setupLogger()
+	// Setup logging
+	mudlog.SetupLogger(
+		events.GetLogger(),
+		os.Getenv(`LOG_LEVEL`),
+		os.Getenv(`LOG_PATH`),
+		os.Getenv(`LOG_NOCOLOR`) == ``,
+	)
 
 	flags.HandleFlags()
 
 	configs.ReloadConfig()
 	c := configs.GetConfig()
 
-	slog.Info(`========================`)
+	mudlog.Info(`========================`)
 	//
-	slog.Info(`  ___  ____   _______   `)
-	slog.Info(`  |  \/  | | | |  _  \  `)
-	slog.Info(`  | .  . | | | | | | |  `)
-	slog.Info(`  | |\/| | | | | | | |  `)
-	slog.Info(`  | |  | | |_| | |/ /   `)
-	slog.Info(`  \_|  |_/\___/|___/    `)
+	mudlog.Info(`  ___  ____   _______   `)
+	mudlog.Info(`  |  \/  | | | |  _  \  `)
+	mudlog.Info(`  | .  . | | | | | | |  `)
+	mudlog.Info(`  | |\/| | | | | | | |  `)
+	mudlog.Info(`  | |  | | |_| | |/ /   `)
+	mudlog.Info(`  \_|  |_/\___/|___/    `)
 	//
-	slog.Info(`========================`)
+	mudlog.Info(`========================`)
 	//
 	cfgData := c.AllConfigData()
 	cfgKeys := make([]string, 0, len(cfgData))
@@ -100,55 +103,51 @@ func main() {
 
 	// sort the keys
 	slices.Sort(cfgKeys)
-
 	for _, k := range cfgKeys {
-		slog.Info("Config", k, cfgData[k])
+		mudlog.Info("Config", "name", k, "value", cfgData[k])
 	}
 	//
-	slog.Info(`========================`)
-
-	// Do version related checks
-	slog.Info(`Version: ` + Version)
-	if err := version.VersionCheck(Version); err != nil {
-
-		if err == version.ErrIncompatibleVersion {
-			slog.Error("Incompatible version.", "details", "Backup all datafiles and run with -u or --upgrade flag to attempt an automatic upgrade.")
-			return
-		}
-
-		if err == version.ErrUpgradePossible {
-			slog.Warn("Version mismatch.", "details", "Your config files could use some updating. Backup all datafiles and run with -u or --upgrade flag to attempt an automatic upgrade.")
-		}
-
-	}
-	slog.Info(`========================`)
+	mudlog.Info(`========================`)
 
 	//
 	// System Configurations
-	runtime.GOMAXPROCS(int(c.MaxCPUCores))
+	runtime.GOMAXPROCS(int(c.Server.MaxCPUCores))
 
 	// Validate chosen world:
-	if err := util.ValidateWorldFiles(`_datafiles/world/default`, c.FolderDataFiles.String()); err != nil {
-		slog.Error("World", "error", err)
+	if err := util.ValidateWorldFiles(`_datafiles/world/default`, c.FilePaths.FolderDataFiles.String()); err != nil {
+		mudlog.Error("World Validation", "error", err)
 		os.Exit(1)
 	}
+
+	hooks.RegisterListeners()
+
+	// Discord integration
+	if webhookUrl := string(c.Integrations.Discord.WebhookUrl); webhookUrl != "" {
+		discord.Init(webhookUrl)
+		mudlog.Info("Discord", "info", "integration is enabled")
+	} else {
+		mudlog.Warn("Discord", "info", "integration is disabled")
+	}
+
+	mudlog.Error(
+		"Starting server",
+		"name", string(c.Server.MudName),
+	)
 
 	// Load all the data files up front.
 	loadAllDataFiles(false)
 
-	rc := uint64(c.RoundCount)
-	if rc > 0 {
-		util.SetRoundCount(uint64(c.RoundCount))
-	} else {
+	// Load the round count from the file
+	if util.LoadRoundCount(c.FilePaths.FolderDataFiles.String()+`/`+util.RoundCountFilename) == util.RoundCountMinimum {
 		gametime.SetToDay(-3)
 	}
 
 	gametime.GetZodiac(1) // The first time this is called it randomizes all zodiacs
 
-	scripting.Setup(int(c.ScriptLoadTimeoutMs), int(c.ScriptRoomTimeoutMs))
+	scripting.Setup(int(c.Scripting.LoadTimeoutMs), int(c.Scripting.RoomTimeoutMs))
 
 	//
-	slog.Info(`========================`)
+	mudlog.Info(`========================`)
 
 	//
 	// Generate initial leaderboard cache
@@ -166,19 +165,19 @@ func main() {
 	// Set the server to be alive
 	serverAlive.Store(true)
 
-	web.Listen(int(c.WebPort), &wg, HandleWebSocketConnection)
+	web.Listen(int(c.Network.WebPort), int(c.Network.HttpsPort), &wg, HandleWebSocketConnection)
 
-	allServerListeners := make([]net.Listener, 0, len(c.TelnetPort))
-	for _, port := range c.TelnetPort {
+	allServerListeners := make([]net.Listener, 0, len(c.Network.TelnetPort))
+	for _, port := range c.Network.TelnetPort {
 		if p, err := strconv.Atoi(port); err == nil {
-			if s := TelnetListenOnPort(``, p, &wg, int(c.MaxTelnetConnections)); s != nil {
+			if s := TelnetListenOnPort(``, p, &wg, int(c.Network.MaxTelnetConnections)); s != nil {
 				allServerListeners = append(allServerListeners, s)
 			}
 		}
 	}
 
-	if c.LocalPort > 0 {
-		TelnetListenOnPort(`127.0.0.1`, int(c.LocalPort), &wg, 0)
+	if c.Network.LocalPort > 0 {
+		TelnetListenOnPort(`127.0.0.1`, int(c.Network.LocalPort), &wg, 0)
 	}
 
 	go worldManager.InputWorker(workerShutdownChan, &wg)
@@ -189,21 +188,23 @@ func main() {
 	// block until a signal comes in
 	<-sigChan
 
-	tplTxt, err := templates.Process("goodbye", nil)
+	tplTxt, err := templates.Process("goodbye", nil, templates.AnsiTagsPreParse)
 	if err != nil {
-		slog.Error("Template Error", "error", err)
+		mudlog.Error("Template Error", "error", err)
 	}
 
 	events.AddToQueue(events.Broadcast{
-		Text: tplTxt,
+		Text: templates.AnsiParse(tplTxt),
 	})
 
 	serverAlive.Store(false) // immediately stop processing incoming connections
 
+	util.SaveRoundCount(c.FilePaths.FolderDataFiles.String() + `/` + util.RoundCountFilename)
+
 	// some last minute stats reporting
 	totalConnections, totalDisconnections := connections.Stats()
-	slog.Error(
-		"shutting down server",
+	mudlog.Error(
+		"Stopping server",
 		"LifetimeConnections", totalConnections,
 		"LifetimeDisconnects", totalDisconnections,
 		"ActiveConnections", totalConnections-totalDisconnections,
@@ -221,7 +222,7 @@ func main() {
 	// Just an ephemeral goroutine that spins its wheels until the program shuts down")
 	go func() {
 		for {
-			slog.Error("Waiting on workers")
+			mudlog.Warn("Waiting on workers")
 			// sleep for 3 seconds
 			time.Sleep(time.Duration(3) * time.Second)
 		}
@@ -236,6 +237,9 @@ func main() {
 	// Otherwise we end up getting flushed file saves incomplete.
 	wg.Wait()
 
+	// Give it a second to disaptch any final messages in the event queue
+	// Example: discord server shutdown
+	time.Sleep(1 * time.Second)
 }
 
 func handleTelnetConnection(connDetails *connections.ConnectionDetails, wg *sync.WaitGroup) {
@@ -243,7 +247,7 @@ func handleTelnetConnection(connDetails *connections.ConnectionDetails, wg *sync
 		wg.Done()
 	}()
 
-	slog.Info("New Connection", "connectionID", connDetails.ConnectionId(), "remoteAddr", connDetails.RemoteAddr().String())
+	mudlog.Info("New Connection", "connectionID", connDetails.ConnectionId(), "remoteAddr", connDetails.RemoteAddr().String())
 
 	// Add starting handlers
 
@@ -291,6 +295,17 @@ func handleTelnetConnection(connDetails *connections.ConnectionDetails, wg *sync
 		connDetails.ConnectionId(),
 	)
 
+	// Send request to enable MSP
+	connections.SendTo(
+		term.MspEnable.BytesWithPayload(nil),
+		connDetails.ConnectionId(),
+	)
+
+	connections.SendTo(
+		term.TelnetSuppressGoAhead.BytesWithPayload(nil),
+		connDetails.ConnectionId(),
+	)
+
 	clientSetupCommands := "" + //term.AnsiAltModeStart.String() + // alternative mode (No scrollback)
 		//term.AnsiCursorHide.String() + // Hide Cursor (Because we will manually echo back)
 		//term.AnsiCharSetUTF8.String() + // UTF8 mode
@@ -322,12 +337,23 @@ func handleTelnetConnection(connDetails *connections.ConnectionDetails, wg *sync
 	// The default behavior is to just send a welcome screen first
 	inputhandlers.LoginInputHandler(clientInput, sharedState)
 
+	if audioConfig := audio.GetFile(`intro`); audioConfig.FilePath != `` {
+		v := 100
+		if audioConfig.Volume > 0 && audioConfig.Volume <= 100 {
+			v = audioConfig.Volume
+		}
+		connections.SendTo(
+			term.MspCommand.BytesWithPayload([]byte("!!MUSIC("+audioConfig.FilePath+" V="+strconv.Itoa(v)+" L=-1 C=1)")),
+			clientInput.ConnectionId,
+		)
+	}
+
 	var userObject *users.UserRecord
 	var sug suggestions.Suggestions
 	lastInput := time.Now()
-	for {
+	c := configs.GetConfig()
 
-		c := configs.GetConfig()
+	for {
 
 		clientInput.EnterPressed = false // Default state is always false
 		clientInput.TabPressed = false   // Default state is always false
@@ -336,14 +362,12 @@ func handleTelnetConnection(connDetails *connections.ConnectionDetails, wg *sync
 		n, err := connDetails.Read(inputBuffer)
 		if err != nil {
 
-			slog.Error("TELNET", "ReadERR", err)
-
 			// If failed to read from the connection, switch to zombie state
 			if userObject != nil {
 
 				userObject.EventLog.Add(`conn`, `Disconnected`)
 
-				if c.ZombieSeconds > 0 {
+				if c.Network.ZombieSeconds > 0 {
 
 					connDetails.SetState(connections.Zombie)
 					worldManager.SendSetZombie(userObject.UserId, true)
@@ -354,13 +378,12 @@ func handleTelnetConnection(connDetails *connections.ConnectionDetails, wg *sync
 					worldManager.SendLogoutConnectionId(connDetails.ConnectionId())
 
 				}
+
 			}
 
-			if err == io.EOF {
-				connections.Remove(connDetails.ConnectionId())
-			} else {
-				slog.Warn("Conn Read Error", "error", err)
-			}
+			mudlog.Warn("Telnet", "error", err)
+
+			connections.Remove(connDetails.ConnectionId())
 
 			break
 		}
@@ -376,7 +399,7 @@ func handleTelnetConnection(connDetails *connections.ConnectionDetails, wg *sync
 
 		// Was there an error? If so, we should probably just stop processing input
 		if err != nil {
-			slog.Warn("InputHandler", "error", err)
+			mudlog.Warn("InputHandler", "error", err)
 			continue
 		}
 
@@ -448,6 +471,11 @@ func handleTelnetConnection(connDetails *connections.ConnectionDetails, wg *sync
 
 		if lastHandler == "LoginInputHandler" {
 
+			connections.SendTo(
+				term.MspCommand.BytesWithPayload([]byte("!!MUSIC(Off)")),
+				clientInput.ConnectionId,
+			)
+
 			// Remove the login handler
 			connDetails.RemoveInputHandler("LoginInputHandler")
 			// Replace it with a regular echo handler.
@@ -461,10 +489,8 @@ func handleTelnetConnection(connDetails *connections.ConnectionDetails, wg *sync
 			}
 
 			if userObject.Permission == users.PermissionAdmin {
-				connDetails.AddInputHandler("AdminCommandInputHandler", inputhandlers.AdminCommandInputHandler)
+				connDetails.AddInputHandler("SystemCommandInputHandler", inputhandlers.SystemCommandInputHandler)
 			}
-
-			connDetails.AddInputHandler("SystemCommandInputHandler", inputhandlers.SystemCommandInputHandler)
 
 			// Add a signal handler (shortcut ctrl combos) after the AnsiHandler
 			// This captures signals and replaces user input so should happen after AnsiHandler to ensure it happens before other processes.
@@ -473,12 +499,17 @@ func handleTelnetConnection(connDetails *connections.ConnectionDetails, wg *sync
 			connDetails.SetState(connections.LoggedIn)
 
 			worldManager.SendEnterWorld(userObject.UserId, userObject.Character.RoomId)
+
 		}
 
 		// If they have pressed enter (submitted their input), and nothing else has handled/aborted
 		if clientInput.EnterPressed {
 
-			if time.Since(lastInput) < time.Duration(c.TurnMs)*time.Millisecond {
+			// Update config after enter presses
+			// No need to update it every loop
+			c = configs.GetConfig()
+
+			if time.Since(lastInput) < time.Duration(c.Timing.TurnMs)*time.Millisecond {
 				/*
 					connections.SendTo(
 						[]byte("Slow down! You're typing too fast! "+time.Since(lastInput).String()+"\n"),
@@ -559,17 +590,35 @@ func HandleWebSocketConnection(conn *websocket.Conn) {
 	// The default behavior is to just send a welcome screen first
 	inputhandlers.LoginInputHandler(clientInput, sharedState)
 
+	connections.SendTo(
+		[]byte("!!SOUND(Off U="+configs.GetConfig().FilePaths.WebCDNLocation.String()+")"),
+		clientInput.ConnectionId,
+	)
+
+	if audioConfig := audio.GetFile(`intro`); audioConfig.FilePath != `` {
+		v := 100
+		if audioConfig.Volume > 0 && audioConfig.Volume <= 100 {
+			v = audioConfig.Volume
+		}
+		connections.SendTo(
+			[]byte("!!MUSIC("+audioConfig.FilePath+" V="+strconv.Itoa(v)+" L=-1 C=1)"),
+			clientInput.ConnectionId,
+		)
+	}
+
+	c := configs.GetConfig()
+
 	for {
 		_, message, err := conn.ReadMessage()
-
-		c := configs.GetConfig()
 
 		if err != nil {
 
 			// If failed to read from the connection, switch to zombie state
 			if userObject != nil {
 
-				if c.ZombieSeconds > 0 {
+				userObject.EventLog.Add(`conn`, `Disconnected`)
+
+				if c.Network.ZombieSeconds > 0 {
 
 					connDetails.SetState(connections.Zombie)
 					worldManager.SendSetZombie(userObject.UserId, true)
@@ -580,9 +629,10 @@ func HandleWebSocketConnection(conn *websocket.Conn) {
 					worldManager.SendLogoutConnectionId(connDetails.ConnectionId())
 
 				}
+
 			}
 
-			slog.Error("WS Read", "error", err)
+			mudlog.Warn("WS Read", "error", err)
 			break
 		}
 
@@ -610,10 +660,8 @@ func HandleWebSocketConnection(conn *websocket.Conn) {
 			}
 
 			if userObject.Permission == users.PermissionAdmin {
-				connDetails.AddInputHandler("AdminCommandInputHandler", inputhandlers.AdminCommandInputHandler)
+				connDetails.AddInputHandler("SystemCommandInputHandler", inputhandlers.SystemCommandInputHandler)
 			}
-
-			connDetails.AddInputHandler("SystemCommandInputHandler", inputhandlers.SystemCommandInputHandler)
 
 			// Add a signal handler (shortcut ctrl combos) after the AnsiHandler
 			// This captures signals and replaces user input so should happen after AnsiHandler to ensure it happens before other processes.
@@ -634,6 +682,7 @@ func HandleWebSocketConnection(conn *websocket.Conn) {
 		// Buffer should be processed as an in-game command
 		worldManager.SendInput(wi)
 
+		c = configs.GetConfig()
 	}
 }
 
@@ -641,7 +690,7 @@ func TelnetListenOnPort(hostname string, portNum int, wg *sync.WaitGroup, maxCon
 
 	server, err := net.Listen("tcp", fmt.Sprintf("%s:%d", hostname, portNum))
 	if err != nil {
-		slog.Error("Error creating server", "error", err)
+		mudlog.Error("Error creating server", "error", err)
 		return nil
 	}
 
@@ -653,12 +702,12 @@ func TelnetListenOnPort(hostname string, portNum int, wg *sync.WaitGroup, maxCon
 			conn, err := server.Accept()
 
 			if !serverAlive.Load() {
-				slog.Error("Connections disabled.")
+				mudlog.Warn("Connections disabled.")
 				return
 			}
 
 			if err != nil {
-				slog.Error("Connection error", "error", err)
+				mudlog.Warn("Connection error", "error", err)
 				continue
 			}
 
@@ -683,81 +732,13 @@ func TelnetListenOnPort(hostname string, portNum int, wg *sync.WaitGroup, maxCon
 	return server
 }
 
-func setupLogger() {
-
-	logLevel := strings.ToUpper(strings.TrimSpace(os.Getenv(`LOG_LEVEL`)))
-	if logLevel == `` {
-		logLevel = `HIGH`
-	}
-
-	var slogLevel slog.Level
-	if logLevel[0:1] == `L` {
-		slogLevel = slog.LevelDebug
-	} else if logLevel[0:1] == `M` {
-		slogLevel = slog.LevelInfo
-	} else {
-		slogLevel = slog.LevelDebug
-	}
-
-	logPath := os.Getenv(`LOG_PATH`)
-	if logPath != `` {
-
-		fileInfo, err := os.Stat(logPath)
-		if err == nil {
-			if fileInfo.IsDir() {
-				panic(fmt.Errorf("log file path is a directory: %s", logPath))
-			}
-
-		} else if os.IsNotExist(err) {
-			// File does not exist; check if the directory exists
-			dir := filepath.Dir(logPath)
-			if _, err := os.Stat(dir); os.IsNotExist(err) {
-				panic(fmt.Errorf("directory for log file does not exist: %s", dir))
-			}
-		} else {
-			// Some other error
-			panic(fmt.Errorf("error accessing log file path: %v", err))
-		}
-
-		lj := &lumberjack.Logger{
-			Filename:   logPath,
-			MaxSize:    100,  // Maximum size in megabytes before rotation
-			MaxBackups: 10,   // Maximum number of old log files to retain
-			Compress:   true, // Compress rotated files
-		}
-
-		// Open or create the log file
-		file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-		if err != nil {
-			panic(fmt.Errorf("failed to open log file: %v", err))
-		}
-		defer file.Close()
-
-		fileLogger := slog.New(
-			util.GetColorLogHandler(lj, slogLevel),
-		)
-
-		// Setup the default logger
-		slog.SetDefault(fileLogger)
-
-	} else {
-
-		localLogger := slog.New(
-			util.GetColorLogHandler(os.Stderr, slogLevel),
-		)
-
-		slog.SetDefault(localLogger)
-	}
-
-}
-
 func loadAllDataFiles(isReload bool) {
 
 	if isReload {
 
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Error("RELOAD FAILED", "err", r)
+				mudlog.Error("RELOAD FAILED", "err", r)
 			}
 		}()
 
@@ -778,5 +759,6 @@ func loadAllDataFiles(isReload bool) {
 	keywords.LoadAliases()
 	mutators.LoadDataFiles()
 	colorpatterns.LoadColorPatterns()
+	audio.LoadAudioConfig()
 	characters.CompileAdjectiveSwaps() // This should come after loading color patterns.
 }

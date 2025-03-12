@@ -9,6 +9,7 @@ import (
 
 	"github.com/volte6/gomud/internal/colorpatterns"
 	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/exit"
 	"github.com/volte6/gomud/internal/rooms"
 	"github.com/volte6/gomud/internal/skills"
@@ -22,15 +23,17 @@ Level 2 - Teleport back to the root of the area you are in
 Level 3 - Set a new destination for your portal teleportation
 Level 4 - Create a physical portal that you can share with players, or return through.
 */
-func Portal(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Portal(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
-	if user.Character.RoomId == int(configs.GetConfig().DeathRecoveryRoom) {
+	c := configs.GetSpecialRoomsConfig()
+
+	if user.Character.RoomId == int(c.DeathRecoveryRoom) {
 		return false, errors.New(`portal command ignored in death recovery`)
 	}
 
 	// This is a hack because using "portal" to enter an existing portal is very common
 	if rest == `` {
-		if handled, err := Go(`portal`, user, room); handled {
+		if handled, err := Go(`portal`, user, room, flags); handled {
 			return handled, err
 		}
 	}
@@ -47,8 +50,8 @@ func Portal(rest string, user *users.UserRecord, room *rooms.Room) (bool, error)
 
 	if skillLevel >= 2 { // Defaults to root of current zone
 		portalTargetRoomId, _ = rooms.GetZoneRoot(user.Character.Zone)
-		if portalTargetRoomId == int(configs.GetConfig().DeathRecoveryRoom) {
-			portalTargetRoomId = int(configs.GetConfig().StartRoom) // If they are in the holding zone, send htem back to start
+		if portalTargetRoomId == int(c.DeathRecoveryRoom) {
+			portalTargetRoomId = int(c.StartRoom) // If they are in the holding zone, send htem back to start
 		}
 	}
 

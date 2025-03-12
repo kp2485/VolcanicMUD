@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/volte6/gomud/internal/buffs"
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/keywords"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/rooms"
 	"github.com/volte6/gomud/internal/scripting"
 	"github.com/volte6/gomud/internal/users"
@@ -25,6 +27,9 @@ type CommandAccess struct {
 	AllowedWhenDowned bool
 	AdminOnly         bool
 }
+
+// Signature of user command
+type UserCommand func(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error)
 
 var (
 	userCommands map[string]CommandAccess = map[string]CommandAccess{
@@ -141,6 +146,7 @@ var (
 		`status`:      {Status, true, false},
 		`storage`:     {Storage, false, false},
 		`suicide`:     {Suicide, true, false},
+		`syslogs`:     {SysLogs, true, true}, // Admin only
 		`tame`:        {Tame, false, false},
 		`time`:        {Time, true, false},
 		`throw`:       {Throw, false, false},
@@ -159,7 +165,8 @@ var (
 		`zap`:         {Zap, true, true},   // Admin only
 		`zone`:        {Zone, false, true}, // Admin only
 		// Special command only used upon creating a new account
-		`start`: {Start, false, false},
+		`start`:     {Start, false, false},
+		`zombieact`: {ZombieAct, false, false},
 	}
 
 	selfKeywords = []string{
@@ -196,6 +203,7 @@ func GetCmdSuggestions(text string, includeAdmin bool) []string {
 
 	return results
 }
+
 func GetHelpSuggestions(text string, includeAdmin bool) []string {
 
 	results := []string{}
@@ -217,16 +225,13 @@ func GetHelpSuggestions(text string, includeAdmin bool) []string {
 	return results
 }
 
-// Signature of user command
-type UserCommand func(rest string, user *users.UserRecord, room *rooms.Room) (bool, error)
-
-func TryCommand(cmd string, rest string, userId int) (bool, error) {
+func TryCommand(cmd string, rest string, userId int, flags events.EventFlag) (bool, error) {
 
 	// Do not allow scripts to intercept server commands
 	if cmd != `server` {
 
 		alias := keywords.TryCommandAlias(cmd)
-		skipScript := false
+		skipScript := flags.Has(events.CmdSkipScripts)
 		if info, ok := userCommands[alias]; ok && info.AdminOnly {
 			skipScript = true
 		}
@@ -310,9 +315,18 @@ func TryCommand(cmd string, rest string, userId int) (bool, error) {
 
 	if cmdInfo, ok := userCommands[cmd]; ok {
 
-		if userDisabled && !cmdInfo.AllowedWhenDowned && !cmdInfo.AdminOnly {
-			user.SendText("You are unable to do that while downed.")
-			return true, nil
+		if !cmdInfo.AllowedWhenDowned {
+
+			// If actually downed, prevent it (unless admin)
+			if userDisabled && !cmdInfo.AdminOnly {
+				user.SendText("You are unable to do that while downed.")
+				return true, nil
+			}
+
+			// Disabled input affects commands which can't be performed when downed.
+			if user.InputBlocked() {
+				return true, nil
+			}
 		}
 
 		if isAdmin || !cmdInfo.AdminOnly {
@@ -322,15 +336,19 @@ func TryCommand(cmd string, rest string, userId int) (bool, error) {
 				util.TrackTime(`usr-cmd[`+cmd+`]`, time.Since(start).Seconds())
 			}()
 
+			if isAdmin {
+				mudlog.Info("Admin Command", "cmd", cmd, "rest", rest, "userId", user.UserId)
+			}
+
 			// Run the command here
-			handled, err := cmdInfo.Func(rest, user, room)
+			handled, err := cmdInfo.Func(rest, user, room, flags)
 			return handled, err
 
 		}
 	}
 
 	if _, ok := emoteAliases[cmd]; ok {
-		handled, err := Emote(cmd, user, room)
+		handled, err := Emote(cmd, user, room, flags)
 		return handled, err
 	}
 
@@ -339,7 +357,7 @@ func TryCommand(cmd string, rest string, userId int) (bool, error) {
 		if len(rest) > 0 {
 			castCmd += ` ` + rest
 		}
-		return Cast(castCmd, user, room)
+		return Cast(castCmd, user, room, flags)
 	}
 
 	// "go" attempt
@@ -348,10 +366,19 @@ func TryCommand(cmd string, rest string, userId int) (bool, error) {
 		util.TrackTime(`usr-cmd[go]`, time.Since(start).Seconds())
 	}()
 
-	if handled, err := Go(cmd, user, room); handled {
+	if handled, err := Go(cmd, user, room, flags); handled {
 		return handled, err
 	}
 	// end "go" attempt
 
 	return false, nil
+}
+
+// Register mob commands from outside of the package
+func RegisterCommand(command string, handlerFunc UserCommand, isBlockable bool, isAdminOnly bool) {
+	userCommands[command] = CommandAccess{
+		handlerFunc,
+		isBlockable,
+		isAdminOnly,
+	}
 }

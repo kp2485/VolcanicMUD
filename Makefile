@@ -6,7 +6,6 @@ BIN ?= go-mud-server
 DOCKER_COMPOSE := docker-compose -f provisioning/docker-compose.yml
 
 export GOFLAGS := -mod=mod
-export GOSUMDB := off
 
 ## Build Targets
 
@@ -80,6 +79,28 @@ coverage:
 
 #
 #
+# Cert generation for testing
+#
+#
+.PHONY: cert-clean
+cert-clean:
+	rm -f server.crt server.key
+
+.PHONY: cert
+cert: server.crt server.key
+
+# This rule generates both files in one go using OpenSSL.
+server.crt server.key:
+	openssl req -x509 -nodes -newkey rsa:4096 \
+		-keyout server.key -out server.crt \
+		-days 365 -subj "/CN=localhost"
+
+# Clean up generated certificate and key.
+cert-clean:
+	rm -f server.crt server.key
+
+#
+#
 # For a complete list of GOOS/GOARCH combinations:
 # Run: go tool dist list
 #
@@ -141,7 +162,6 @@ endif
 .PHONY: view_pprof_mem
 view_pprof_mem:
 	go tool pprof -http=:8989 source/_datafiles/profiles/mem.pprof
-
 
 #
 # Help target - greps and formats special comments to form a "help" command for makefiles

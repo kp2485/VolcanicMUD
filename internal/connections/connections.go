@@ -2,12 +2,12 @@ package connections
 
 import (
 	"errors"
-	"log/slog"
 	"net"
 	"os"
 	"sync"
 
 	"github.com/gorilla/websocket"
+	"github.com/volte6/gomud/internal/mudlog"
 )
 
 const ReadBufferSize = 1024
@@ -113,7 +113,7 @@ func Kick(id ConnectionId) (err error) {
 		// keep track of the number of disconnects
 		disconnectCounter++
 		// remove the connection from the map
-		slog.Info("connection kicked", "connectionId", id, "remoteAddr", cd.RemoteAddr().String())
+		mudlog.Info("connection kicked", "connectionId", id, "remoteAddr", cd.RemoteAddr().String())
 
 		return nil
 
@@ -136,8 +136,6 @@ func Remove(id ConnectionId) (err error) {
 		disconnectCounter++
 		// Remove the entry
 		delete(netConnections, id)
-		// remove the connection from the map
-		slog.Info("connection removed", "connectionId", id, "remoteAddr", cd.RemoteAddr().String())
 
 		return nil
 
@@ -146,16 +144,30 @@ func Remove(id ConnectionId) (err error) {
 	return errors.New("connection not found")
 }
 
-func Broadcast(colorizedText []byte) {
+func Broadcast(colorizedText []byte, skipConnectionIds ...ConnectionId) []ConnectionId {
 
 	lock.Lock()
 
 	removeIds := []ConnectionId{}
+	sentToIds := []ConnectionId{}
 
 	for id, cd := range netConnections {
 
 		if cd.state == Login {
 			continue
+		}
+
+		if len(skipConnectionIds) > 0 {
+			skip := false
+			for _, cId := range skipConnectionIds {
+				if cId == id {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
 		}
 
 		// Write the message to the connection
@@ -164,17 +176,20 @@ func Broadcast(colorizedText []byte) {
 		_, err = cd.Write(colorizedText)
 
 		if err != nil {
-			slog.Error("could not write to connection", "connectionId", id, "remoteAddr", cd.RemoteAddr().String(), "error", err)
+			mudlog.Warn("Broadcast()", "connectionId", id, "remoteAddr", cd.RemoteAddr().String(), "error", err)
 			// Remove from the connections
 			removeIds = append(removeIds, id)
 		}
 
+		sentToIds = append(sentToIds, id)
 	}
 	lock.Unlock()
 
 	for _, id := range removeIds {
 		Remove(id)
 	}
+
+	return sentToIds
 }
 
 func SendTo(b []byte, ids ...ConnectionId) {
@@ -190,7 +205,7 @@ func SendTo(b []byte, ids ...ConnectionId) {
 		if cd, ok := netConnections[id]; ok {
 
 			if _, err := cd.Write(b); err != nil {
-				slog.Error("could not write to connection", "connectionId", id, "remoteAddr", cd.RemoteAddr().String(), "error", err)
+				mudlog.Warn("SendTo()", "connectionId", id, "remoteAddr", cd.RemoteAddr().String(), "error", err)
 				// Remove from the connections
 				removeIds = append(removeIds, id)
 				continue
@@ -202,7 +217,7 @@ func SendTo(b []byte, ids ...ConnectionId) {
 	}
 
 	if sentCt < 1 {
-		//slog.Info("message sent to nobody", "message", strings.Replace(string(b), "\033", "ESC", -1))
+		//mudlog.Info("message sent to nobody", "message", strings.Replace(string(b), "\033", "ESC", -1))
 	}
 
 	lock.Unlock()

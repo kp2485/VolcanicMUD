@@ -2,13 +2,13 @@ package quests
 
 import (
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/volte6/gomud/internal/configs"
 	"github.com/volte6/gomud/internal/fileloader"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/util"
 )
 
@@ -184,13 +184,13 @@ func LoadDataFiles() {
 
 	start := time.Now()
 
-	tmpQuests, err := fileloader.LoadAllFlatFiles[int, *Quest](configs.GetConfig().FolderDataFiles.String() + `/quests`)
+	tmpQuests, err := fileloader.LoadAllFlatFiles[int, *Quest](configs.GetFilePathsConfig().FolderDataFiles.String() + `/quests`)
 	if err != nil {
 		panic(err)
 	}
 
 	quests = tmpQuests
 
-	slog.Info("quests.LoadDataFiles()", "loadedCount", len(quests), "Time Taken", time.Since(start))
+	mudlog.Info("quests.LoadDataFiles()", "loadedCount", len(quests), "Time Taken", time.Since(start))
 
 }

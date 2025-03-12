@@ -2,7 +2,6 @@ package colorpatterns
 
 import (
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"regexp"
@@ -10,11 +9,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/Volte6/ansitags"
+	"github.com/mattn/go-runewidth"
 	"github.com/pkg/errors"
 	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/mudlog"
 	"gopkg.in/yaml.v2"
 )
 
@@ -180,7 +180,7 @@ func ApplyColors(input string, patternValues []int, method ...ColorizeStyle) str
 	} else if method[0] == Stretch {
 		// Spread the whole pattern to fit the string
 		subCounter := 0
-		stretchAmount := int(math.Floor(float64(utf8.RuneCountInString(input)) / float64(len(patternValues))))
+		stretchAmount := int(math.Floor(float64(runewidth.StringWidth(input)) / float64(len(patternValues))))
 		if stretchAmount < 1 {
 			stretchAmount = 1
 		}
@@ -252,7 +252,7 @@ func LoadColorPatterns() {
 
 	start := time.Now()
 
-	path := string(configs.GetConfig().FolderDataFiles) + `/color-patterns.yaml`
+	path := string(configs.GetFilePathsConfig().FolderDataFiles) + `/color-patterns.yaml`
 
 	bytes, err := os.ReadFile(path)
 	if err != nil {
@@ -270,10 +270,10 @@ func LoadColorPatterns() {
 
 	CompileColorPatterns()
 
-	slog.Info("...LoadColorPatterns()", "loadedCount", len(numericPatterns), "Time Taken", time.Since(start))
+	mudlog.Info("...LoadColorPatterns()", "loadedCount", len(numericPatterns), "Time Taken", time.Since(start))
 
 	for _, name := range GetColorPatternNames() {
-		slog.Info("Color Test (Patterns)", "name", name,
+		mudlog.Info("Color Test (Patterns)", "name", name,
 			"(default)", ansitags.Parse(ApplyColorPattern(`Color test pattern`, name)),
 			"Stretch", ansitags.Parse(ApplyColorPattern(`Color test pattern`, name, Stretch)),
 			"Words", ansitags.Parse(ApplyColorPattern(`Color test pattern color test pattern`, name, Words)),

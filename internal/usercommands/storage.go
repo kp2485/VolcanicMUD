@@ -5,16 +5,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/items"
 	"github.com/volte6/gomud/internal/rooms"
-	"github.com/volte6/gomud/internal/scripting"
 	"github.com/volte6/gomud/internal/templates"
 	"github.com/volte6/gomud/internal/term"
 	"github.com/volte6/gomud/internal/users"
 	"github.com/volte6/gomud/internal/util"
 )
 
-func Storage(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Storage(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
 	if !room.IsStorage {
 
@@ -73,7 +73,7 @@ func Storage(rest string, user *users.UserRecord, room *rooms.Room) (bool, error
 		if itemName == `all` {
 
 			for _, itm := range user.Character.GetAllBackpackItems() {
-				Storage(fmt.Sprintf(`add !%d`, itm.ItemId), user, room)
+				Storage(fmt.Sprintf(`add !%d`, itm.ItemId), user, room, flags)
 
 				spaceLeft--
 				if spaceLeft < 0 {
@@ -94,17 +94,20 @@ func Storage(rest string, user *users.UserRecord, room *rooms.Room) (bool, error
 		user.Character.RemoveItem(itm)
 		user.ItemStorage.AddItem(itm)
 
-		user.SendText(fmt.Sprintf(`You placed the <ansi fg="itemname">%s</ansi> into storage.`, itm.DisplayName()))
+		events.AddToQueue(events.ItemOwnership{
+			UserId: user.UserId,
+			Item:   itm,
+			Gained: false,
+		})
 
-		// Trigger lost event
-		scripting.TryItemScriptEvent(`onLost`, itm, user.UserId)
+		user.SendText(fmt.Sprintf(`You placed the <ansi fg="itemname">%s</ansi> into storage.`, itm.DisplayName()))
 
 	} else if action == `remove` {
 
 		if itemName == `all` {
 
 			for _, itm := range user.ItemStorage.GetItems() {
-				Storage(fmt.Sprintf(`remove !%d`, itm.ItemId), user, room)
+				Storage(fmt.Sprintf(`remove !%d`, itm.ItemId), user, room, flags)
 			}
 
 			return true, nil
@@ -135,11 +138,15 @@ func Storage(rest string, user *users.UserRecord, room *rooms.Room) (bool, error
 
 		if user.Character.StoreItem(itm) {
 
+			events.AddToQueue(events.ItemOwnership{
+				UserId: user.UserId,
+				Item:   itm,
+				Gained: true,
+			})
+
 			user.ItemStorage.RemoveItem(itm)
 
 			user.SendText(fmt.Sprintf(`You removed the <ansi fg="itemname">%s</ansi> from storage.`, itm.DisplayName()))
-
-			scripting.TryItemScriptEvent(`onFound`, itm, user.UserId)
 
 		} else {
 			user.SendText(`You can't carry that!`)

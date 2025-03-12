@@ -2,7 +2,6 @@ package pets
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/volte6/gomud/internal/configs"
 	"github.com/volte6/gomud/internal/fileloader"
 	"github.com/volte6/gomud/internal/items"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/statmods"
 	"github.com/volte6/gomud/internal/util"
 	"gopkg.in/yaml.v2"
@@ -142,7 +142,7 @@ func (p *Pet) Save() error {
 		return err
 	}
 
-	saveFilePath := util.FilePath(configs.GetConfig().FolderDataFiles.String(), `/`, `pets`, `/`, fmt.Sprintf("%s.yaml", fileName))
+	saveFilePath := util.FilePath(configs.GetFilePathsConfig().FolderDataFiles.String(), `/`, `pets`, `/`, fmt.Sprintf("%s.yaml", fileName))
 
 	err = os.WriteFile(saveFilePath, bytes, 0644)
 	if err != nil {
@@ -177,12 +177,12 @@ func LoadDataFiles() {
 
 	start := time.Now()
 
-	tmpPetTypes, err := fileloader.LoadAllFlatFiles[string, *Pet](configs.GetConfig().FolderDataFiles.String() + `/pets`)
+	tmpPetTypes, err := fileloader.LoadAllFlatFiles[string, *Pet](configs.GetFilePathsConfig().FolderDataFiles.String() + `/pets`)
 	if err != nil {
 		panic(err)
 	}
 
 	petTypes = tmpPetTypes
 
-	slog.Info("pets.LoadDataFiles()", "loadedCount", len(petTypes), "Time Taken", time.Since(start))
+	mudlog.Info("pets.LoadDataFiles()", "loadedCount", len(petTypes), "Time Taken", time.Since(start))
 }

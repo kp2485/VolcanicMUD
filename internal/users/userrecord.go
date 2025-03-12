@@ -5,19 +5,16 @@ import (
 	"fmt"
 	"math"
 	"regexp"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/volte6/gomud/internal/buffs"
+	"github.com/volte6/gomud/internal/audio"
 	"github.com/volte6/gomud/internal/characters"
 	"github.com/volte6/gomud/internal/configs"
 	"github.com/volte6/gomud/internal/connections"
 	"github.com/volte6/gomud/internal/events"
-	"github.com/volte6/gomud/internal/gametime"
 	"github.com/volte6/gomud/internal/prompt"
 	"github.com/volte6/gomud/internal/skills"
-	"github.com/volte6/gomud/internal/term"
+	"github.com/volte6/gomud/internal/stats"
 	"github.com/volte6/gomud/internal/util"
 	//
 )
@@ -27,11 +24,6 @@ var (
 	PermissionUser  string = "user"  // Logged in but no special powers
 	PermissionMod   string = "mod"   // Logged in has limited special powers
 	PermissionAdmin string = "admin" // Logged in and has special powers
-
-	PromptDefault         = `{8}[{t} {T} {255}HP:{hp}{8}/{HP} {255}MP:{13}{mp}{8}/{13}{MP}{8}]{239}{h}{8}:`
-	promptDefaultCompiled = util.ConvertColorShortTags(PromptDefault)
-	promptColorRegex      = regexp.MustCompile(`\{(\d*)(?::)?(\d*)?\}`)
-	promptFindTagsRegex   = regexp.MustCompile(`\{[a-zA-Z%:\-]+\}`)
 )
 
 type UserRecord struct {
@@ -46,9 +38,11 @@ type UserRecord struct {
 	AdminCommands  []string              `yaml:"admincommands,omitempty"`
 	ConfigOptions  map[string]any        `yaml:"configoptions,omitempty"`
 	Inbox          Inbox                 `yaml:"inbox,omitempty"`
-	Muted          bool                  `yaml:"muted,omitempty"`    // Cannot SEND custom communications to anyone but admin/mods
-	Deafened       bool                  `yaml:"deafened,omitempty"` // Cannot HEAR custom communications from anyone but admin/mods
-	EventLog       UserLog               `yaml:"-"`                  // Do not retain in user file (for now)
+	Muted          bool                  `yaml:"muted,omitempty"`        // Cannot SEND custom communications to anyone but admin/mods
+	Deafened       bool                  `yaml:"deafened,omitempty"`     // Cannot HEAR custom communications from anyone but admin/mods
+	TipsComplete   map[string]bool       `yaml:"tipscomplete,omitempty"` // Tips the user has followed/completed so they can be quiet
+	EventLog       UserLog               `yaml:"-"`                      // Do not retain in user file (for now)
+	LastMusic      string                `yaml:"-"`                      // Keeps track of the last music that was played
 	connectionId   uint64
 	unsentText     string
 	suggestText    string
@@ -57,11 +51,12 @@ type UserRecord struct {
 	tempDataStore  map[string]any
 	activePrompt   *prompt.Prompt
 	isZombie       bool // are they a zombie currently?
+	inputBlocked   bool // Whether input is currently intentionally turned off (for a certain category of commands)
 }
 
 func NewUserRecord(userId int, connectionId uint64) *UserRecord {
 
-	c := configs.GetConfig()
+	c := configs.GetGamePlayConfig()
 
 	u := &UserRecord{
 		connectionId:   connectionId,
@@ -78,7 +73,7 @@ func NewUserRecord(userId int, connectionId uint64) *UserRecord {
 		EventLog:       UserLog{},
 	}
 
-	if c.PermaDeath {
+	if c.Death.PermaDeath {
 		u.Character.ExtraLives = int(c.LivesStart)
 	}
 
@@ -142,19 +137,160 @@ func (u *UserRecord) GrantXP(amt int, source string) {
 		u.EventLog.Add(`xp`, fmt.Sprintf(`Gained <ansi fg="yellow-bold">%d experience points</ansi>! <ansi fg="7">(%s)</ansi>`, grantXP, source))
 	}
 
+	if newLevel, statsDelta := u.Character.LevelUp(); newLevel {
+
+		c := configs.GetGamePlayConfig()
+
+		livesBefore := u.Character.ExtraLives
+
+		levelUpEvent := events.LevelUp{
+			UserId:         u.UserId,
+			RoomId:         u.Character.RoomId,
+			Username:       u.Username,
+			CharacterName:  u.Character.Name,
+			LevelsGained:   0,
+			NewLevel:       u.Character.Level,
+			StatsDelta:     stats.Statistics{},
+			TrainingPoints: 0,
+			StatPoints:     0,
+			LivesGained:    0,
+		}
+
+		for newLevel {
+
+			if c.Death.PermaDeath && c.LivesOnLevelUp > 0 {
+				u.Character.ExtraLives += int(c.LivesOnLevelUp)
+			}
+
+			u.EventLog.Add(`xp`, fmt.Sprintf(`<ansi fg="username">%s</ansi> is now <ansi fg="magenta-bold">level %d</ansi>!`, u.Character.Name, u.Character.Level))
+
+			levelUpEvent.LevelsGained += 1
+			levelUpEvent.StatsDelta.Strength.Value += statsDelta.Strength.Value
+			levelUpEvent.StatsDelta.Speed.Value += statsDelta.Speed.Value
+			levelUpEvent.StatsDelta.Smarts.Value += statsDelta.Smarts.Value
+			levelUpEvent.StatsDelta.Vitality.Value += statsDelta.Vitality.Value
+			levelUpEvent.StatsDelta.Mysticism.Value += statsDelta.Mysticism.Value
+			levelUpEvent.StatsDelta.Perception.Value += statsDelta.Perception.Value
+
+			levelUpEvent.TrainingPoints += 1
+			levelUpEvent.StatPoints += 1
+
+			newLevel, statsDelta = u.Character.LevelUp()
+		}
+
+		if u.Character.ExtraLives > int(c.LivesMax) {
+			u.Character.ExtraLives = int(c.LivesMax)
+		}
+
+		levelUpEvent.LivesGained = u.Character.ExtraLives - livesBefore
+		levelUpEvent.NewLevel = u.Character.Level
+
+		events.AddToQueue(levelUpEvent)
+
+		SaveUser(*u)
+	}
 }
 
-func (u *UserRecord) Command(inputTxt string, waitTurns ...int) {
+func (u *UserRecord) DidTip(tipName string, completed ...bool) bool {
 
-	wt := 0
-	if len(waitTurns) > 0 {
-		wt = waitTurns[0]
+	if u.TipsComplete == nil {
+		u.TipsComplete = map[string]bool{}
+	}
+
+	if len(completed) > 0 {
+		if completed[0] {
+			u.TipsComplete[tipName] = completed[0]
+		} else {
+			delete(u.TipsComplete, tipName)
+		}
+		return completed[0]
+	}
+
+	return u.TipsComplete[tipName]
+}
+
+func (u *UserRecord) PlayMusic(musicFileOrId string) {
+
+	v := 100
+	if soundConfig := audio.GetFile(musicFileOrId); soundConfig.FilePath != `` {
+		musicFileOrId = soundConfig.FilePath
+		if soundConfig.Volume > 0 && soundConfig.Volume <= 100 {
+			v = soundConfig.Volume
+		}
+	}
+
+	events.AddToQueue(events.MSP{
+		UserId:    u.UserId,
+		SoundType: `MUSIC`,
+		SoundFile: musicFileOrId,
+		Volume:    v,
+	})
+
+}
+
+func (u *UserRecord) PlaySound(soundId string, category string) {
+
+	v := 100
+	if soundConfig := audio.GetFile(soundId); soundConfig.FilePath != `` {
+		soundId = soundConfig.FilePath
+		if soundConfig.Volume > 0 && soundConfig.Volume <= 100 {
+			v = soundConfig.Volume
+		}
+	}
+
+	events.AddToQueue(events.MSP{
+		UserId:    u.UserId,
+		SoundType: `SOUND`,
+		SoundFile: soundId,
+		Volume:    v,
+		Category:  category,
+	})
+
+}
+
+func (u *UserRecord) Command(inputTxt string, waitSeconds ...float64) {
+
+	readyTurn := util.GetTurnCount()
+	if len(waitSeconds) > 0 {
+		readyTurn += uint64(float64(configs.GetTimingConfig().SecondsToTurns(1)) * waitSeconds[0])
 	}
 
 	events.AddToQueue(events.Input{
 		UserId:    u.UserId,
 		InputText: inputTxt,
-		WaitTurns: wt,
+		ReadyTurn: readyTurn,
+	})
+
+}
+
+func (u *UserRecord) BlockInput() {
+	u.inputBlocked = true
+}
+
+func (u *UserRecord) UnblockInput() {
+	u.inputBlocked = false
+}
+
+func (u *UserRecord) InputBlocked() bool {
+	return u.inputBlocked
+}
+
+func (u *UserRecord) CommandFlagged(inputTxt string, flagData events.EventFlag, waitSeconds ...float64) {
+
+	readyTurn := util.GetTurnCount()
+	if len(waitSeconds) > 0 {
+		readyTurn += uint64(float64(configs.GetTimingConfig().SecondsToTurns(1)) * waitSeconds[0])
+	}
+
+	if flagData&events.CmdBlockInput == events.CmdBlockInput {
+		u.BlockInput()
+	}
+
+	events.AddToQueue(events.Input{
+		UserId:    u.UserId,
+		InputText: inputTxt,
+		ReadyTurn: readyTurn,
+		Flags:     flagData,
 	})
 
 }
@@ -247,233 +383,6 @@ func (u *UserRecord) GetConfigOption(key string) any {
 
 func (u *UserRecord) GetConnectTime() time.Time {
 	return u.connectionTime
-}
-
-func (u *UserRecord) GetCommandPrompt(fullRedraw bool, forcePromptType ...string) string {
-
-	promptOut := ``
-
-	if len(forcePromptType) == 0 || forcePromptType[0] != `mprompt` {
-		if u.activePrompt != nil {
-
-			if activeQuestion := u.activePrompt.GetNextQuestion(); activeQuestion != nil {
-				promptOut = activeQuestion.String()
-			}
-		}
-	}
-
-	if len(promptOut) == 0 {
-
-		var customPrompt any = nil
-		var inCombat bool = u.Character.Aggro != nil
-
-		if len(forcePromptType) > 0 {
-			customPrompt = u.GetConfigOption(forcePromptType[0] + `-compiled`)
-		} else {
-
-			if inCombat {
-				customPrompt = u.GetConfigOption(`fprompt-compiled`)
-			}
-
-			// No other custom prompts? try the default setting
-			if customPrompt == nil {
-				customPrompt = u.GetConfigOption(`prompt-compiled`)
-			}
-		}
-
-		var ok bool
-		ansiPrompt := ``
-		if customPrompt == nil {
-			ansiPrompt = promptDefaultCompiled
-		} else if ansiPrompt, ok = customPrompt.(string); !ok {
-			ansiPrompt = promptDefaultCompiled
-		}
-
-		promptOut = u.ProcessPromptString(ansiPrompt)
-
-	}
-
-	if fullRedraw {
-		unsent, suggested := u.GetUnsentText()
-		if len(suggested) > 0 {
-			suggested = `<ansi fg="suggested-text">` + suggested + `</ansi>`
-		}
-		return term.AnsiMoveCursorColumn.String() + term.AnsiEraseLine.String() + promptOut + unsent + suggested
-	}
-
-	return promptOut
-}
-
-func (u *UserRecord) ProcessPromptString(promptStr string) string {
-
-	promptOut := strings.Builder{}
-
-	var currentXP, tnlXP int = -1, -1
-	var hpPct, mpPct int = -1, -1
-	var hpClass, mpClass string
-
-	promptLen := len(promptStr)
-	tagStartPos := -1
-
-	for i := 0; i < promptLen; i++ {
-		if promptStr[i] == '{' {
-			tagStartPos = i
-			continue
-		}
-		if promptStr[i] == '}' {
-
-			switch promptStr[tagStartPos : i+1] {
-
-			case `{\n}`:
-				promptOut.WriteString("\n")
-
-			case `{hp}`:
-				if len(hpClass) == 0 {
-					hpClass = fmt.Sprintf(`health-%d`, util.QuantizeTens(u.Character.Health, u.Character.HealthMax.Value))
-				}
-				promptOut.WriteString(fmt.Sprintf(`<ansi fg="%s">%d</ansi>`, hpClass, u.Character.Health))
-
-			case `{hp:-}`:
-				promptOut.WriteString(strconv.Itoa(u.Character.Health))
-			case `{HP}`:
-				if len(hpClass) == 0 {
-					hpClass = fmt.Sprintf(`health-%d`, util.QuantizeTens(u.Character.Health, u.Character.HealthMax.Value))
-				}
-				promptOut.WriteString(fmt.Sprintf(`<ansi fg="%s">%d</ansi>`, hpClass, u.Character.HealthMax.Value))
-			case `{HP:-}`:
-				promptOut.WriteString(strconv.Itoa(u.Character.HealthMax.Value))
-			case `{hp%}`:
-				if hpPct == -1 {
-					hpPct = int(math.Floor(float64(u.Character.Health) / float64(u.Character.HealthMax.Value) * 100))
-				}
-				if len(hpClass) == 0 {
-					hpClass = fmt.Sprintf(`health-%d`, util.QuantizeTens(u.Character.Health, u.Character.HealthMax.Value))
-				}
-				promptOut.WriteString(fmt.Sprintf(`<ansi fg="%s">%d%%</ansi>`, hpClass, hpPct))
-
-			case `{hp%:-}`:
-				if hpPct == -1 {
-					hpPct = int(math.Floor(float64(u.Character.Health) / float64(u.Character.HealthMax.Value) * 100))
-				}
-				promptOut.WriteString(strconv.Itoa(hpPct))
-				promptOut.WriteString(`%`)
-
-			case `{mp}`:
-				if len(mpClass) == 0 {
-					mpClass = fmt.Sprintf(`mana-%d`, util.QuantizeTens(u.Character.Mana, u.Character.ManaMax.Value))
-				}
-				promptOut.WriteString(fmt.Sprintf(`<ansi fg="%s">%d</ansi>`, mpClass, u.Character.Mana))
-
-			case `{mp:-}`:
-				promptOut.WriteString(strconv.Itoa(u.Character.Mana))
-
-			case `{MP}`:
-				if len(mpClass) == 0 {
-					mpClass = fmt.Sprintf(`mana-%d`, util.QuantizeTens(u.Character.Mana, u.Character.ManaMax.Value))
-				}
-				promptOut.WriteString(fmt.Sprintf(`<ansi fg="%s">%d</ansi>`, mpClass, u.Character.ManaMax.Value))
-
-			case `{MP:-}`:
-				promptOut.WriteString(strconv.Itoa(u.Character.ManaMax.Value))
-
-			case `{mp%}`:
-				if mpPct == -1 {
-					mpPct = int(math.Floor(float64(u.Character.Mana) / float64(u.Character.ManaMax.Value) * 100))
-				}
-				if len(mpClass) == 0 {
-					mpClass = fmt.Sprintf(`mana-%d`, util.QuantizeTens(u.Character.Mana, u.Character.ManaMax.Value))
-				}
-				promptOut.WriteString(fmt.Sprintf(`<ansi fg="%s">%d%%</ansi>`, mpClass, mpPct))
-
-			case `{mp%:-}`:
-				if mpPct == -1 {
-					mpPct = int(math.Floor(float64(u.Character.Mana) / float64(u.Character.ManaMax.Value) * 100))
-				}
-				promptOut.WriteString(strconv.Itoa(mpPct))
-				promptOut.WriteString(`%`)
-
-			case `{ap}`:
-				promptOut.WriteString(strconv.Itoa(u.Character.ActionPoints))
-
-			case `{xp}`:
-				if currentXP == -1 && tnlXP == -1 {
-					currentXP, tnlXP = u.Character.XPTNLActual()
-				}
-				promptOut.WriteString(strconv.Itoa(currentXP))
-
-			case `{XP}`:
-				if currentXP == -1 && tnlXP == -1 {
-					currentXP, tnlXP = u.Character.XPTNLActual()
-				}
-				promptOut.WriteString(strconv.Itoa(tnlXP))
-
-			case `{xp%}`:
-				if currentXP == -1 && tnlXP == -1 {
-					currentXP, tnlXP = u.Character.XPTNLActual()
-				}
-				tnlPercent := int(math.Floor(float64(currentXP) / float64(tnlXP) * 100))
-				promptOut.WriteString(strconv.Itoa(tnlPercent))
-				promptOut.WriteString(`%`)
-
-			case `{h}`:
-				hiddenFlag := ``
-				if u.Character.HasBuffFlag(buffs.Hidden) {
-					hiddenFlag = `H`
-				}
-				promptOut.WriteString(hiddenFlag)
-
-			case `{a}`:
-				alignClass := u.Character.AlignmentName()
-				promptOut.WriteString(fmt.Sprintf(`<ansi fg="%s">%s</ansi>`, alignClass, alignClass[:1]))
-
-			case `{A}`:
-				alignClass := u.Character.AlignmentName()
-				promptOut.WriteString(fmt.Sprintf(`<ansi fg="%s">%s</ansi>`, alignClass, alignClass))
-
-			case `{g}`:
-				promptOut.WriteString(strconv.Itoa(u.Character.Gold))
-
-			case `{tp}`:
-				promptOut.WriteString(strconv.Itoa(u.Character.TrainingPoints))
-
-			case `{sp}`:
-				promptOut.WriteString(strconv.Itoa(u.Character.StatPoints))
-
-			case `{i}`:
-				promptOut.WriteString(strconv.Itoa(len(u.Character.Items)))
-
-			case `{I}`:
-				promptOut.WriteString(strconv.Itoa(u.Character.CarryCapacity()))
-
-			case `{lvl}`:
-				promptOut.WriteString(strconv.Itoa(u.Character.Level))
-
-			case `{w}`:
-				if u.Character.Aggro != nil {
-					promptOut.WriteString(strconv.Itoa(u.Character.Aggro.RoundsWaiting))
-				} else {
-					promptOut.WriteString(`0`)
-				}
-
-			case `{t}`:
-				gd := gametime.GetDate()
-				promptOut.WriteString(gd.String(true))
-
-			case `{T}`:
-				gd := gametime.GetDate()
-				promptOut.WriteString(gd.String())
-
-			}
-			tagStartPos = -1
-			continue
-		}
-
-		if tagStartPos == -1 {
-			promptOut.WriteByte(promptStr[i])
-		}
-	}
-
-	return promptOut.String()
 }
 
 func (u *UserRecord) RoundTick() {
@@ -581,14 +490,12 @@ func (u *UserRecord) GetPrompt() *prompt.Prompt {
 }
 
 func (u *UserRecord) ClearPrompt() {
-
 	u.activePrompt = nil
 }
 
 func (u *UserRecord) GetOnlineInfo() OnlineInfo {
-
-	c := configs.GetConfig()
-	afkRounds := uint64(c.SecondsToRounds(int(c.AfkSeconds)))
+	c := configs.GetTimingConfig()
+	afkRounds := uint64(c.SecondsToRounds(int(configs.GetNetworkConfig().AfkSeconds)))
 	roundNow := util.GetRoundCount()
 
 	connTime := u.GetConnectTime()

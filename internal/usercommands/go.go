@@ -5,8 +5,10 @@ import (
 
 	"github.com/volte6/gomud/internal/buffs"
 	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/items"
 	"github.com/volte6/gomud/internal/mobs"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/parties"
 	"github.com/volte6/gomud/internal/rooms"
 	"github.com/volte6/gomud/internal/scripting"
@@ -14,7 +16,7 @@ import (
 	"github.com/volte6/gomud/internal/util"
 )
 
-func Go(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Go(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
 	if user.Character.Aggro != nil {
 		user.SendText("You can't do that! You are in combat!")
@@ -53,6 +55,7 @@ func Go(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 				user.SendText("You're too encumbered to move (<ansi fg=\"command\">help encumbrance</ansi>)!")
 			} else {
 				user.SendText("You're too tired to move (slow down)!")
+				mudlog.Debug("No ActionPoints", "AP", user.Character.ActionPoints, "Needed", actionCost)
 			}
 
 			return true, nil
@@ -114,6 +117,12 @@ func Go(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 					user.Character.SetKey(`key-`+lockId, fmt.Sprintf(`%d`, backpackKeyItm.ItemId))
 					user.Character.RemoveItem(backpackKeyItm)
 
+					events.AddToQueue(events.ItemOwnership{
+						UserId: user.UserId,
+						Item:   backpackKeyItm,
+						Gained: false,
+					})
+
 					exitInfo.Lock.SetUnlocked()
 					room.SetExitLock(exitName, false)
 				}
@@ -124,6 +133,12 @@ func Go(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 				}
 			}
 
+		}
+
+		if exitInfo.ExitMessage != `` && !flags.Has(events.CmdIsRequeue) {
+			user.SendText(exitInfo.ExitMessage)
+			user.CommandFlagged(rest, flags|events.CmdIsRequeue|events.CmdBlockInputUntilComplete, 1)
+			return true, nil
 		}
 
 		// Load current room details
@@ -155,7 +170,7 @@ func Go(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 
 			scripting.TryRoomScriptEvent(`onExit`, user.UserId, originRoomId)
 
-			c := configs.GetConfig()
+			c := configs.GetTextFormatsConfig()
 
 			// Tell the player they are moving
 			if isSneaking {
@@ -317,9 +332,12 @@ func Go(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 			}
 
 			handled = true
-			Look(`secretly`, user, destRoom)
+			Look(``, user, destRoom, events.CmdSecretly) // Do a secret look.
 
 			scripting.TryRoomScriptEvent(`onEnter`, user.UserId, destRoom.RoomId)
+
+			room.PlaySound(`room-exit`, `movement`, user.UserId)
+			destRoom.PlaySound(`room-enter`, `movement`, user.UserId)
 		}
 
 	}
@@ -330,10 +348,8 @@ func Go(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 			user.SendText("You're bumping into walls.")
 			if !user.Character.HasBuffFlag(buffs.Hidden) {
 
-				c := configs.GetConfig()
-
 				room.SendText(
-					fmt.Sprintf(string(c.ExitRoomMessageWrapper),
+					fmt.Sprintf(string(configs.GetTextFormatsConfig().ExitRoomMessageWrapper),
 						fmt.Sprintf(`<ansi fg="username">%s</ansi> is bumping into walls.`, user.Character.Name),
 					),
 					user.UserId)

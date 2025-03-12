@@ -49,23 +49,25 @@ func StartAuction(item items.Item, userId int, minimumBid int) bool {
 		return false
 	}
 
-	c := configs.GetConfig()
+	c := configs.GetAuctionsConfig()
 
 	if u := users.GetByUserId(userId); u != nil {
 		ActiveAuction = &AuctionItem{
 			ItemData:          item,
 			SellerUserId:      userId,
 			SellerName:        u.Character.Name,
-			Anonymous:         bool(c.AuctionsAnonymous),
-			EndTime:           time.Now().Add(time.Second * time.Duration(c.AuctionSeconds)),
+			Anonymous:         bool(c.Anonymous),
+			EndTime:           time.Now().Add(time.Second * time.Duration(c.DurationSeconds)),
 			MinimumBid:        minimumBid,
 			HighestBid:        0,
 			HighestBidUserId:  0,
 			HighestBidderName: ``,
 		}
+
+		return true
 	}
 
-	return true
+	return false
 }
 
 func GetCurrentAuction() *AuctionItem {
@@ -140,4 +142,12 @@ func GetAuctionHistory(totalItems int) []PastAuctionItem {
 	}
 
 	return PastAuctions[len(PastAuctions)-totalItems : totalItems]
+}
+
+func GetLastAuction() PastAuctionItem {
+	if len(PastAuctions) == 0 {
+		return PastAuctionItem{}
+	}
+
+	return PastAuctions[len(PastAuctions)-1]
 }

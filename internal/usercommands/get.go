@@ -8,12 +8,11 @@ import (
 	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/items"
 	"github.com/volte6/gomud/internal/rooms"
-	"github.com/volte6/gomud/internal/scripting"
 	"github.com/volte6/gomud/internal/users"
 	"github.com/volte6/gomud/internal/util"
 )
 
-func Get(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Get(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
 	args := util.SplitButRespectQuotes(strings.ToLower(rest))
 
@@ -24,14 +23,14 @@ func Get(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 
 	if args[0] == "all" {
 		if room.Gold > 0 {
-			Get(`gold`, user, room)
+			Get(`gold`, user, room, flags)
 		}
 
 		if len(room.Items) > 0 {
 			iCopies := append([]items.Item{}, room.Items...)
 
 			for _, item := range iCopies {
-				Get(item.Name(), user, room)
+				Get(item.Name(), user, room, flags)
 			}
 		}
 
@@ -108,6 +107,13 @@ func Get(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 			if user.Character.Pet.RemoveItem(matchItem) {
 				if !user.Character.StoreItem(matchItem) {
 					user.Character.Pet.StoreItem(matchItem)
+				} else {
+
+					events.AddToQueue(events.ItemOwnership{
+						UserId: user.UserId,
+						Item:   matchItem,
+						Gained: true,
+					})
 				}
 
 				user.SendText(
@@ -118,7 +124,6 @@ func Get(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 					user.UserId,
 				)
 
-				scripting.TryItemScriptEvent(`onFound`, matchItem, user.UserId)
 			}
 		}
 
@@ -166,19 +171,15 @@ func Get(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 			// Trigger onFound event
 			if user.Character.StoreItem(matchItem) {
 
+				events.AddToQueue(events.ItemOwnership{
+					UserId: user.UserId,
+					Item:   matchItem,
+					Gained: true,
+				})
+
 				// Swap the item location
 				container.RemoveItem(matchItem)
 				room.Containers[containerName] = container
-
-				iSpec := matchItem.GetSpec()
-				if iSpec.QuestToken != `` {
-
-					events.AddToQueue(events.Quest{
-						UserId:     user.UserId,
-						QuestToken: iSpec.QuestToken,
-					})
-
-				}
 
 				user.SendText(
 					fmt.Sprintf(`You take the <ansi fg="itemname">%s</ansi> from the <ansi fg="container">%s</ansi>.`, matchItem.DisplayName(), containerName),
@@ -188,7 +189,7 @@ func Get(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 					user.UserId,
 				)
 
-				scripting.TryItemScriptEvent(`onFound`, matchItem, user.UserId)
+				return true, nil
 
 			} else {
 				user.SendText(
@@ -257,15 +258,11 @@ func Get(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 				// Swap the item location
 				room.RemoveItem(matchItem, getFromStash)
 
-				iSpec := matchItem.GetSpec()
-				if iSpec.QuestToken != `` {
-
-					events.AddToQueue(events.Quest{
-						UserId:     user.UserId,
-						QuestToken: iSpec.QuestToken,
-					})
-
-				}
+				events.AddToQueue(events.ItemOwnership{
+					UserId: user.UserId,
+					Item:   matchItem,
+					Gained: true,
+				})
 
 				if getFromStash {
 					user.SendText(
@@ -284,7 +281,6 @@ func Get(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 						user.UserId,
 					)
 				}
-				scripting.TryItemScriptEvent(`onFound`, matchItem, user.UserId)
 
 			} else {
 				user.SendText(
@@ -314,7 +310,12 @@ func Get(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 		return true, nil
 	}
 
-	user.SendText(fmt.Sprintf("You don't see a %s around.", rest))
+	containerName = room.FindContainerByName(rest)
+	if containerName != `` {
+		user.SendText(fmt.Sprintf(`You can't pick up the <ansi fg="container">%s</ansi>. Try looking at it.`, containerName))
+	} else {
+		user.SendText(fmt.Sprintf("You don't see a %s around.", rest))
+	}
 
 	return true, nil
 }

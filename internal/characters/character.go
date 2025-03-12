@@ -7,11 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"log/slog"
-
 	"github.com/volte6/gomud/internal/buffs"
 	"github.com/volte6/gomud/internal/configs"
 	"github.com/volte6/gomud/internal/items"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/pets"
 	"github.com/volte6/gomud/internal/quests"
 	"github.com/volte6/gomud/internal/races"
@@ -303,7 +302,7 @@ func (c *Character) FindKeyInBackpack(lockId string) (items.Item, bool) {
 
 func (c *Character) HasKey(lockId string, difficulty int) (hasKey bool, hasSequence bool) {
 
-	sequence := util.GetLockSequence(lockId, difficulty, string(configs.GetConfig().Seed))
+	sequence := util.GetLockSequence(lockId, difficulty, string(configs.GetServerConfig().Seed))
 
 	// Check whether they ahve a key for this lock
 	return c.GetKey(`key-`+lockId) != ``, c.GetKey(lockId) == sequence
@@ -427,7 +426,7 @@ func (c *Character) GrantXP(xp int) (actualXP int, xpScale int) {
 		return 0, 100
 	}
 
-	preScale := float64(configs.GetConfig().XPScale) / 100
+	preScale := float64(configs.GetGamePlayConfig().XPScale) / 100
 	xp = int(math.Round(preScale * float64(xp)))
 
 	xpScale = c.StatMod(string(statmods.XPScale)) + 100
@@ -446,7 +445,7 @@ func (c *Character) GrantXP(xp int) (actualXP int, xpScale int) {
 
 	c.Experience += actualXP
 
-	slog.Info(`GrantXP()`, `username`, c.Name, `xp`, xp, `xpscale`, xpScale, `actualXP`, actualXP)
+	mudlog.Debug(`GrantXP()`, `username`, c.Name, `xp`, xp, `xpscale`, xpScale, `actualXP`, actualXP)
 
 	return actualXP, xpScale
 }
@@ -1592,7 +1591,7 @@ func (c *Character) Validate(recalcPermaBuffs ...bool) error {
 
 				if !itemFoundInDisabledSlot.IsDisabled() {
 					c.StoreItem(itemFoundInDisabledSlot)
-					slog.Debug("Disabled Check", "error", "Item found in disabled slot", "name", itemFoundInDisabledSlot.Name(), "slot", disabledSlot, "character", c.Name)
+					mudlog.Debug("Disabled Check", "error", "Item found in disabled slot", "name", itemFoundInDisabledSlot.Name(), "slot", disabledSlot, "character", c.Name)
 				}
 			}
 

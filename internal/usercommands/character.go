@@ -3,14 +3,15 @@ package usercommands
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strconv"
 
 	"github.com/volte6/gomud/internal/characters"
 	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/items"
 	"github.com/volte6/gomud/internal/mobs"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/races"
 	"github.com/volte6/gomud/internal/rooms"
 	"github.com/volte6/gomud/internal/skills"
@@ -20,7 +21,7 @@ import (
 	"github.com/volte6/gomud/internal/util"
 )
 
-func Character(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Character(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
 	if !room.IsCharacterRoom {
 		return false, fmt.Errorf(`not in a IsCharacterRoom`)
@@ -35,8 +36,9 @@ func Character(rest string, user *users.UserRecord, room *rooms.Room) (bool, err
 		user.Character = characters.New()
 		rooms.MoveToRoom(user.UserId, -1)
 	*/
+	c := configs.GetGamePlayConfig()
 
-	if configs.GetConfig().MaxAltCharacters == 0 {
+	if c.MaxAltCharacters == 0 {
 		user.SendText(`<ansi fg="203">Alt character are disabled on this server.</ansi>`)
 		return true, errors.New(`alt characters disabled`)
 	}
@@ -105,7 +107,7 @@ func Character(rest string, user *users.UserRecord, room *rooms.Room) (bool, err
 	/////////////////////////
 	if question.Response == `new` {
 
-		if len(altNames) >= int(configs.GetConfig().MaxAltCharacters) {
+		if len(altNames) >= int(c.MaxAltCharacters) {
 			user.SendText(`<ansi fg="203">You already have too many alts.</ansi>`)
 			user.SendText(`<ansi fg="203">You'll need to delete one to create a new one.</ansi>`)
 
@@ -317,7 +319,7 @@ func Character(rest string, user *users.UserRecord, room *rooms.Room) (bool, err
 			tmpChar := user.Character
 			user.Character = &char
 
-			Status(``, user, room)
+			Status(``, user, room, flags)
 
 			user.Character = tmpChar
 
@@ -378,7 +380,7 @@ func Character(rest string, user *users.UserRecord, room *rooms.Room) (bool, err
 
 			charValue := gearValue + (250 * char.Level)
 
-			slog.Debug(`Hire Alt`, `UserId`, user.UserId, `alt-name`, char.Name, `gear-value`, gearValue, `level`, char.Level, `total`, charValue)
+			mudlog.Debug(`Hire Alt`, `UserId`, user.UserId, `alt-name`, char.Name, `gear-value`, gearValue, `level`, char.Level, `total`, charValue)
 
 			question := cmdPrompt.Ask(fmt.Sprintf(`<ansi fg="51">The price to hire <ansi fg="username">%s</ansi> is <ansi fg="gold">%d gold</ansi>. Are you sure?</ansi>`, char.Name, charValue), []string{`yes`, `no`}, `no`)
 			if !question.Done {
@@ -481,7 +483,7 @@ func getAltTable(nameToAlt map[string]characters.Character, charmedChars map[str
 		return num1 < num2
 	})
 
-	altTableData := templates.GetTable(fmt.Sprintf(`Your alt characters (%d/%d)`, len(nameToAlt), configs.GetConfig().MaxAltCharacters), headers, rows)
+	altTableData := templates.GetTable(fmt.Sprintf(`Your alt characters (%d/%d)`, len(nameToAlt), configs.GetGamePlayConfig().MaxAltCharacters), headers, rows)
 	tplTxt, _ := templates.Process("tables/generic", altTableData)
 
 	return tplTxt

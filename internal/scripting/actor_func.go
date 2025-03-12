@@ -298,14 +298,25 @@ func (a ScriptActor) Sleep(seconds int) {
 	}
 }
 
-func (a ScriptActor) Command(cmd string, waitTurns ...int) {
-	if len(waitTurns) < 1 {
-		waitTurns = append(waitTurns, 0)
+func (a ScriptActor) Command(cmd string, waitSeconds ...float64) {
+	if len(waitSeconds) < 1 {
+		waitSeconds = append(waitSeconds, 0)
 	}
 	if a.userId > 0 {
-		a.userRecord.Command(cmd, waitTurns[0])
+		a.userRecord.Command(cmd, waitSeconds[0])
 	} else {
-		a.mobRecord.Command(cmd, waitTurns[0])
+		a.mobRecord.Command(cmd, waitSeconds[0])
+	}
+}
+
+func (a ScriptActor) CommandFlagged(cmd string, flags events.EventFlag, waitSeconds ...float64) {
+	if len(waitSeconds) < 1 {
+		waitSeconds = append(waitSeconds, 0)
+	}
+	if a.userId > 0 {
+		a.userRecord.CommandFlagged(cmd, flags, waitSeconds[0])
+	} else {
+		a.mobRecord.Command(cmd, waitSeconds[0])
 	}
 }
 
@@ -348,6 +359,7 @@ func (a ScriptActor) MoveRoom(destRoomId int, leaveCharmedMobs ...bool) {
 		rmNow := rooms.LoadRoom(a.characterRecord.RoomId)
 
 		if rmNext := rooms.LoadRoom(destRoomId); rmNext != nil {
+
 			rooms.MoveToRoom(a.userId, destRoomId)
 
 			if len(leaveCharmedMobs) < 1 || !leaveCharmedMobs[0] {
@@ -394,7 +406,13 @@ func (a ScriptActor) GiveItem(itm any) {
 		iRecord := sItem.itemRecord
 		if a.characterRecord.StoreItem(*iRecord) {
 			if a.userId > 0 {
-				TryItemScriptEvent(`onGive`, *sItem.itemRecord, a.userId)
+
+				events.AddToQueue(events.ItemOwnership{
+					UserId: a.userId,
+					Item:   *iRecord,
+					Gained: true,
+				})
+
 			}
 		}
 	}
@@ -404,7 +422,13 @@ func (a ScriptActor) GiveItem(itm any) {
 func (a ScriptActor) TakeItem(itm ScriptItem) {
 	if a.characterRecord.RemoveItem(*itm.itemRecord) {
 		if a.userId > 0 {
-			TryItemScriptEvent(`onLost`, *itm.itemRecord, a.userId)
+
+			events.AddToQueue(events.ItemOwnership{
+				UserId: a.userId,
+				Item:   *itm.itemRecord,
+				Gained: false,
+			})
+
 		}
 	}
 }
@@ -452,7 +476,7 @@ func (a ScriptActor) CancelBuffWithFlag(buffFlag string) bool {
 // Remove a buff silently
 func (a ScriptActor) RemoveBuff(buffId int) bool {
 
-	if !configs.GetConfig().AllowItemBuffRemoval {
+	if !configs.GetGamePlayConfig().AllowItemBuffRemoval {
 		buffList := a.characterRecord.GetBuffs(buffId)
 		if len(buffList) > 0 {
 			if buffList[0].PermaBuff {
@@ -591,7 +615,7 @@ func (a ScriptActor) GiveStatPoints(ct int) {
 }
 
 func (a ScriptActor) GiveExtraLife() {
-	c := configs.GetConfig()
+	c := configs.GetGamePlayConfig()
 	a.characterRecord.ExtraLives += 1
 	if a.characterRecord.ExtraLives > int(c.LivesMax) {
 		a.characterRecord.ExtraLives = int(c.LivesMax)

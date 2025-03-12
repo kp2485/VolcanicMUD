@@ -2,12 +2,12 @@ package gametime
 
 import (
 	"fmt"
-	"log/slog"
 	"math"
 	"strconv"
 	"strings"
 
 	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/util"
 )
 
@@ -103,7 +103,7 @@ func SetToDay(roundAdjustment ...int) {
 // Between 0 and 23
 func SetTime(setToHour int, setToMinutes ...int) {
 
-	c := configs.GetConfig()
+	c := configs.GetTimingConfig()
 
 	setToHour = setToHour % 24
 	roundsPerHour := float64(c.RoundsPerDay) / 24
@@ -150,7 +150,7 @@ func GetDate(forceRound ...uint64) GameDate {
 
 func getDate(currentRound uint64) GameDate {
 
-	c := configs.GetConfig()
+	c := configs.GetTimingConfig()
 
 	gd := GameDate{
 		RoundNumber:      currentRound,
@@ -290,20 +290,22 @@ func (g GameDate) AddPeriod(str string) uint64 {
 			qty = 1
 		}
 
+		c := configs.GetTimingConfig()
+
 		if parts[1] == `real` || parts[1] == `irl` { // e.g. - 2 irl days
 			realTime = true
-			roundsPerRealDay = 84600 / int(configs.GetConfig().RoundSeconds)
-			roundsPerRealHour = 3600 / int(configs.GetConfig().RoundSeconds)
-			roundsPerRealMinute = 60 / int(configs.GetConfig().RoundSeconds)
+			roundsPerRealDay = 84600 / int(c.RoundSeconds)
+			roundsPerRealHour = 3600 / int(c.RoundSeconds)
+			roundsPerRealMinute = 60 / int(c.RoundSeconds)
 
 			timeStr = parts[2]
 		} else if parts[1] == `game` || parts[1] == `gametime` { // e.g. - 2 game days
 			timeStr = parts[2]
 		} else if parts[2] == `real` || parts[2] == `irl` { // e.g. - 2 days irl
 			realTime = true
-			roundsPerRealDay = 84600 / int(configs.GetConfig().RoundSeconds)
-			roundsPerRealHour = 3600 / int(configs.GetConfig().RoundSeconds)
-			roundsPerRealMinute = 60 / int(configs.GetConfig().RoundSeconds)
+			roundsPerRealDay = 84600 / int(c.RoundSeconds)
+			roundsPerRealHour = 3600 / int(c.RoundSeconds)
+			roundsPerRealMinute = 60 / int(c.RoundSeconds)
 
 			timeStr = parts[1]
 		} else if parts[2] == `game` || parts[2] == `gametime` { // e.g. - 2 days gametime
@@ -383,7 +385,7 @@ func (g GameDate) AddPeriod(str string) uint64 {
 		} else if strShort == `noo` { // if timeStr == `noon` || timeStr == `noons` {
 
 			if realTime {
-				slog.Error("AddPeriod", "error", "real time not supported for noon yet: "+timeStr)
+				mudlog.Error("AddPeriod", "error", "real time not supported for noon yet: "+timeStr)
 			}
 
 			g = getDate(GetLastPeriod(`noon`, g.RoundNumber))
@@ -395,7 +397,7 @@ func (g GameDate) AddPeriod(str string) uint64 {
 		} else if strShort == `mid` { // if timeStr == `midnight` || timeStr == `midnights` {
 
 			if realTime {
-				slog.Error("AddPeriod", "error", "real time not supported for midnight yet: "+timeStr)
+				mudlog.Error("AddPeriod", "error", "real time not supported for midnight yet: "+timeStr)
 			}
 
 			g = getDate(GetLastPeriod(`day`, g.RoundNumber))
@@ -407,7 +409,7 @@ func (g GameDate) AddPeriod(str string) uint64 {
 		} else if timeStr == `sunrise` || timeStr == `sunrises` {
 
 			if realTime {
-				slog.Error("AddPeriod", "error", "real time not supported for sunrise yet: "+timeStr)
+				mudlog.Error("AddPeriod", "error", "real time not supported for sunrise yet: "+timeStr)
 			}
 
 			g = getDate(GetLastPeriod(`sunrise`, g.RoundNumber))
@@ -419,7 +421,7 @@ func (g GameDate) AddPeriod(str string) uint64 {
 		} else if timeStr == `sunset` || timeStr == `sunsets` {
 
 			if realTime {
-				slog.Error("AddPeriod", "error", "real time not supported for sunset yet: "+timeStr)
+				mudlog.Error("AddPeriod", "error", "real time not supported for sunset yet: "+timeStr)
 			}
 
 			g = getDate(GetLastPeriod(`sunset`, g.RoundNumber))
@@ -448,7 +450,7 @@ func (g GameDate) AddPeriod(str string) uint64 {
 
 func GetLastPeriod(periodName string, roundNumber uint64) uint64 {
 
-	c := configs.GetConfig()
+	c := configs.GetTimingConfig()
 
 	roundsPerDay := uint64(c.RoundsPerDay)
 	nightHoursPerDay := uint64(c.NightHours)

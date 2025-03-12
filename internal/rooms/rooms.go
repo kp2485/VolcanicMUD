@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/volte6/gomud/internal/audio"
 	"github.com/volte6/gomud/internal/buffs"
 	"github.com/volte6/gomud/internal/configs"
 	"github.com/volte6/gomud/internal/events"
@@ -65,6 +66,7 @@ type Room struct {
 	RoomId            int        // a unique numeric index of the room. Also the filename.
 	Zone              string     // zone is a way to partition rooms into groups. Also into folders.
 	ZoneConfig        ZoneConfig `yaml:"zoneconfig,omitempty"`      // If non-null is a root room.
+	MusicFile         string     `yaml:"musicfile,omitempty"`       // background music to play when in this room
 	IsBank            bool       `yaml:"isbank,omitempty"`          // Is this a bank room? If so, players can deposit/withdraw gold here.
 	IsStorage         bool       `yaml:"isstorage,omitempty"`       // Is this a storage room? If so, players can add/remove objects here.
 	IsCharacterRoom   bool       `yaml:"ischaracterroom,omitempty"` // Is this a room where characters can create new characters to swap between them?
@@ -88,7 +90,7 @@ type Room struct {
 	LastIdleMessage   uint8                             `yaml:"-"`                           // index of the last idle message displayed
 	LongTermDataStore map[string]any                    `yaml:"longtermdatastore,omitempty"` // Long term data store for the room
 	Mutators          mutators.MutatorList              `yaml:"mutators,omitempty"`          // mutators this room spawns with.
-	Pvp               bool                              `yaml:"pvp,omitempty"`               // config pvp is set to `limited`, uses this value
+	Pvp               bool                              `yaml:"pvp,omitempty"`               // if config pvp is set to `limited`, uses this value
 	players           []int                             `yaml:"-"`                           // list of user IDs currently in the room
 	mobs              []int                             `yaml:"-"`                           // list of mob instance IDs currently in the room. Does not get saved.
 	visitors          map[VisitorType]map[int]uint64    `yaml:"-"`                           // list of user IDs that have visited this room, and the last round they did
@@ -198,15 +200,15 @@ func (r *Room) RemoveCorpse(c Corpse) bool {
 
 func (r *Room) UpdateCorpses(roundNow uint64) {
 
-	c := configs.GetConfig()
+	c := configs.GetGamePlayConfig()
 
-	if !c.CorpsesEnabled {
+	if !c.Death.CorpsesEnabled {
 		return
 	}
 
 	removeIdx := []int{}
 	for idx, corpse := range r.Corpses {
-		corpse.Update(roundNow, c.CorpseDecayTime.String())
+		corpse.Update(roundNow, c.Death.CorpseDecayTime.String())
 		if corpse.Prunable {
 			removeIdx = append(removeIdx, idx)
 			if corpse.MobId > 0 {
@@ -244,6 +246,45 @@ func (r *Room) SendText(txt string, excludeUserIds ...int) {
 		ExcludeUserIds: excludeUserIds,
 		IsQuiet:        false,
 	})
+
+}
+
+func (r *Room) PlaySound(soundId string, category string, excludeUserIds ...int) {
+
+	volume := 100
+	if soundConfig := audio.GetFile(soundId); soundConfig.FilePath != `` {
+		soundId = soundConfig.FilePath
+		if soundConfig.Volume > 0 && soundConfig.Volume <= 100 {
+			volume = soundConfig.Volume
+		}
+	}
+
+	for _, userId := range r.players {
+
+		skip := false
+
+		exLen := len(excludeUserIds)
+		if exLen > 0 {
+			for _, excludeId := range excludeUserIds {
+				if excludeId == userId {
+					skip = true
+					break
+				}
+			}
+		}
+
+		if skip {
+			continue
+		}
+
+		events.AddToQueue(events.MSP{
+			UserId:    userId,
+			SoundType: `SOUND`,
+			SoundFile: soundId,
+			Volume:    volume,
+			Category:  category,
+		})
+	}
 
 }
 
@@ -348,7 +389,7 @@ func (r *Room) GetScript() string {
 func (r *Room) GetScriptPath() string {
 
 	// Load any script for the room
-	return strings.Replace(configs.GetConfig().FolderDataFiles.String()+`/rooms/`+r.Filepath(), `.yaml`, `.js`, 1)
+	return strings.Replace(configs.GetFilePathsConfig().FolderDataFiles.String()+`/rooms/`+r.Filepath(), `.yaml`, `.js`, 1)
 }
 
 func (r *Room) FindTemporaryExitByUserId(userId int) (exit.TemporaryRoomExit, bool) {
@@ -732,13 +773,21 @@ func (r *Room) CleanupMobSpawns(noCooldown bool) {
 
 func (r *Room) AddMob(mobInstanceId int) {
 
-	// Do before lock
+	mob := mobs.GetInstance(mobInstanceId)
+	if mob == nil {
+		return
+	}
+
 	r.MarkVisited(mobInstanceId, VisitorMob)
 
-	if mob := mobs.GetInstance(mobInstanceId); mob != nil {
-		mob.Character.RoomId = r.RoomId
-		mob.Character.Zone = r.Zone
-	}
+	events.AddToQueue(events.RoomChange{
+		MobInstanceId: mobInstanceId,
+		FromRoomId:    mob.Character.RoomId,
+		ToRoomId:      r.RoomId,
+	})
+
+	mob.Character.RoomId = r.RoomId
+	mob.Character.Zone = r.Zone
 
 	r.mobs = append(r.mobs, mobInstanceId)
 
@@ -747,7 +796,6 @@ func (r *Room) AddMob(mobInstanceId int) {
 
 func (r *Room) RemoveMob(mobInstanceId int) {
 
-	// Do before lock
 	r.MarkVisited(mobInstanceId, VisitorMob, 1)
 
 	mobLen := len(r.mobs)
@@ -990,7 +1038,7 @@ func (r *Room) MarkVisited(id int, vType VisitorType, subtrackTurns ...int) {
 		r.visitors[vType] = make(map[int]uint64)
 	}
 
-	lastSeen := util.GetTurnCount() + uint64(visitorTrackingTimeout*configs.GetConfig().TurnsPerSecond())
+	lastSeen := util.GetTurnCount() + uint64(visitorTrackingTimeout*configs.GetTimingConfig().TurnsPerSecond())
 
 	if len(subtrackTurns) > 0 {
 		if uint64(subtrackTurns[0]) > lastSeen {
@@ -1250,9 +1298,10 @@ func (r *Room) Visitors(vType VisitorType) map[int]float64 {
 
 	ret := make(map[int]float64)
 
+	tps := configs.GetTimingConfig().TurnsPerSecond()
 	if _, ok := r.visitors[vType]; ok {
 		for userId, expires := range r.visitors[vType] {
-			ret[userId] = float64(expires-util.GetTurnCount()) / float64(visitorTrackingTimeout*configs.GetConfig().TurnsPerSecond())
+			ret[userId] = float64(expires-util.GetTurnCount()) / float64(visitorTrackingTimeout*tps)
 		}
 
 	}
@@ -1533,13 +1582,63 @@ func (r *Room) FindContainerByName(containerNameSearch string) string {
 
 func (r *Room) FindNoun(noun string) (foundNoun string, nounDescription string) {
 
-	for _, newNoun := range strings.Split(noun, ` `) {
+	if len(r.Nouns) == 0 {
+		return ``, ``
+	}
 
-		if desc, ok := r.Nouns[newNoun]; ok {
-			if desc[0:1] == `:` {
-				return desc[1:], r.Nouns[desc[1:]]
+	roomNouns := map[string]string{}
+
+	for originalNoun, originalDesc := range r.Nouns {
+		roomNouns[originalNoun] = originalDesc
+
+		if strings.Contains(originalNoun, ` `) {
+			for _, n := range strings.Split(originalNoun, ` `) {
+
+				if _, ok := r.Nouns[n]; ok {
+					continue
+				}
+
+				if _, ok := roomNouns[n]; ok {
+					continue
+				}
+
+				roomNouns[n] = `:` + originalNoun
+
 			}
-			return noun, desc
+		}
+
+	}
+
+	testNouns := util.SplitButRespectQuotes(noun)
+	ct := len(testNouns)
+	for i := 0; i < ct; i++ {
+
+		if splitCount := strings.Split(testNouns[i], ` `); len(splitCount) > 1 {
+
+			for _, n2 := range splitCount {
+
+				if len(n2) < 2 {
+					continue
+				}
+
+				testNouns = append(testNouns, n2)
+			}
+
+		}
+	}
+
+	// If it created more than one word, put the original back on as a full string to test
+	if len(testNouns) > 1 {
+		testNouns = append(testNouns, noun)
+	}
+
+	for _, newNoun := range testNouns {
+
+		if desc, ok := roomNouns[newNoun]; ok {
+			if desc[0:1] == `:` {
+				return desc[1:], roomNouns[desc[1:]]
+			}
+			return newNoun, desc
 		}
 
 		if len(newNoun) < 2 {
@@ -1547,33 +1646,39 @@ func (r *Room) FindNoun(noun string) (foundNoun string, nounDescription string) 
 		}
 
 		// If ended in `s`, strip it and add a new word to the search list
-		if noun[len(newNoun)-1:] == `s` {
+		if newNoun[len(newNoun)-1:] == `s` {
+
 			testNoun := newNoun[:len(newNoun)-1]
-			if desc, ok := r.Nouns[testNoun]; ok {
+			if desc, ok := roomNouns[testNoun]; ok {
 				if desc[0:1] == `:` {
-					return desc[1:], r.Nouns[desc[1:]]
+					return desc[1:], roomNouns[desc[1:]]
 				}
 				return testNoun, desc
 			}
+
 		} else {
+
 			testNoun := newNoun + `s`
-			if desc, ok := r.Nouns[testNoun]; ok { // `s`` at end
+			if desc, ok := roomNouns[testNoun]; ok { // `s`` at end
 				if desc[0:1] == `:` {
-					return desc[1:], r.Nouns[desc[1:]]
+					return desc[1:], roomNouns[desc[1:]]
 				}
 				return testNoun, desc
 			}
+
 		}
 
 		// Switch ending of `y` to `ies`
-		if noun[len(newNoun)-1:] == `y` {
+		if newNoun[len(newNoun)-1:] == `y` {
+
 			testNoun := newNoun[:len(newNoun)-1] + `ies`
-			if desc, ok := r.Nouns[testNoun]; ok { // `ies` instead of `y` at end
+			if desc, ok := roomNouns[testNoun]; ok { // `ies` instead of `y` at end
 				if desc[0:1] == `:` {
-					return desc[1:], r.Nouns[desc[1:]]
+					return desc[1:], roomNouns[desc[1:]]
 				}
 				return testNoun, desc
 			}
+
 		}
 
 		if len(newNoun) < 3 {
@@ -1581,22 +1686,26 @@ func (r *Room) FindNoun(noun string) (foundNoun string, nounDescription string) 
 		}
 
 		// Strip 'es' such as 'torches'
-		if noun[len(newNoun)-2:] == `es` {
+		if newNoun[len(newNoun)-2:] == `es` {
+
 			testNoun := newNoun[:len(newNoun)-2]
-			if desc, ok := r.Nouns[testNoun]; ok {
+			if desc, ok := roomNouns[testNoun]; ok {
 				if desc[0:1] == `:` {
-					return desc[1:], r.Nouns[desc[1:]]
+					return desc[1:], roomNouns[desc[1:]]
 				}
 				return testNoun, desc
 			}
+
 		} else {
+
 			testNoun := newNoun + `es`
-			if desc, ok := r.Nouns[testNoun]; ok { // `es` at end
+			if desc, ok := roomNouns[testNoun]; ok { // `es` at end
 				if desc[0:1] == `:` {
-					return desc[1:], r.Nouns[desc[1:]]
+					return desc[1:], roomNouns[desc[1:]]
 				}
 				return testNoun, desc
 			}
+
 		}
 
 		if len(newNoun) < 4 {
@@ -1605,13 +1714,15 @@ func (r *Room) FindNoun(noun string) (foundNoun string, nounDescription string) 
 
 		// Strip 'es' such as 'torches'
 		if noun[len(newNoun)-3:] == `ies` {
+
 			testNoun := newNoun[:len(newNoun)-3] + `y`
-			if desc, ok := r.Nouns[testNoun]; ok { // `y` instead of `ies` at end
+			if desc, ok := roomNouns[testNoun]; ok { // `y` instead of `ies` at end
 				if desc[0:1] == `:` {
-					return desc[1:], r.Nouns[desc[1:]]
+					return desc[1:], roomNouns[desc[1:]]
 				}
 				return testNoun, desc
 			}
+
 		}
 
 	}
@@ -1732,16 +1843,18 @@ func (r *Room) PruneVisitors() int {
 		return 0
 	}
 
+	c := configs.GetTimingConfig()
+
 	// Make sure whoever is here has the freshest mark.
 	for _, userId := range r.players {
 		if _, ok := r.visitors[VisitorUser]; ok {
-			r.visitors[VisitorUser][userId] = util.GetTurnCount() + uint64(visitorTrackingTimeout*configs.GetConfig().TurnsPerSecond())
+			r.visitors[VisitorUser][userId] = util.GetTurnCount() + uint64(visitorTrackingTimeout*c.TurnsPerSecond())
 		}
 	}
 
 	for _, mobId := range r.mobs {
 		if _, ok := r.visitors[VisitorMob]; ok {
-			r.visitors[VisitorMob][mobId] = util.GetTurnCount() + uint64(visitorTrackingTimeout*configs.GetConfig().TurnsPerSecond())
+			r.visitors[VisitorMob][mobId] = util.GetTurnCount() + uint64(visitorTrackingTimeout*c.TurnsPerSecond())
 		}
 	}
 
@@ -2177,11 +2290,11 @@ func (r *Room) IsPvp() bool {
 // Returns an error with a reason why they cannot PVP, or nil
 func (r *Room) CanPvp(attUser *users.UserRecord, defUser *users.UserRecord) error {
 
-	if attUser.Character.RoomId == -1 || attUser.Character.RoomId == int(configs.GetConfig().DeathRecoveryRoom) {
+	if attUser.Character.RoomId == -1 || attUser.Character.RoomId == int(configs.GetSpecialRoomsConfig().DeathRecoveryRoom) {
 		return errors.New(`Fighting is not allowed here.`)
 	}
 
-	c := configs.GetConfig()
+	c := configs.GetGamePlayConfig()
 
 	// Possible settings are `enabled`, `disabled`, `limited`
 	pvpSetting := string(c.PVP)

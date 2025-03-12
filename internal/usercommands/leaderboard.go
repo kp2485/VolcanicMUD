@@ -6,15 +6,16 @@ import (
 	"strings"
 
 	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/leaderboard"
 	"github.com/volte6/gomud/internal/rooms"
 	"github.com/volte6/gomud/internal/templates"
 	"github.com/volte6/gomud/internal/users"
 )
 
-func Leaderboards(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Leaderboards(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
-	if configs.GetConfig().LeaderboardSize == 0 {
+	if configs.GetStatisticsConfig().LeaderboardSize == 0 {
 		user.SendText(`Leaderboards are disabled.`)
 		return true, nil
 	}

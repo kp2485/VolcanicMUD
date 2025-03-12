@@ -8,13 +8,12 @@ import (
 	"sync"
 	"text/template"
 	"time"
-	"unicode/utf8"
-
-	"log/slog"
 
 	"github.com/Volte6/ansitags"
+	"github.com/mattn/go-runewidth"
 	"github.com/volte6/gomud/internal/colorpatterns"
 	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/util"
 )
 
@@ -48,7 +47,7 @@ var (
 
 func Exists(name string) bool {
 
-	var fullPath string = util.FilePath(string(configs.GetConfig().FolderDataFiles)+`/templates`, `/`, name+`.template`)
+	var fullPath string = util.FilePath(string(configs.GetFilePathsConfig().FolderDataFiles)+`/templates`, `/`, name+`.template`)
 	_, err := os.Stat(fullPath)
 
 	return err == nil
@@ -86,11 +85,11 @@ func Process(name string, data any, ansiFlags ...AnsiFlag) (string, error) {
 	}
 
 	// All templates must end with .template
-	var fullPath string = util.FilePath(string(configs.GetConfig().FolderDataFiles), `/`, `templates`, `/`, name+`.template`)
+	var fullPath string = util.FilePath(string(configs.GetFilePathsConfig().FolderDataFiles), `/`, `templates`, `/`, name+`.template`)
 
 	fInfo, err := os.Stat(fullPath)
 	if err != nil {
-		//slog.Error("could not stat template file", "error", err)
+		//mudlog.Error("could not stat template file", "error", err)
 		return "[TEMPLATE READ ERROR]", err
 	}
 
@@ -106,7 +105,7 @@ func Process(name string, data any, ansiFlags ...AnsiFlag) (string, error) {
 		// Get the file contents
 		fileContents, err := os.ReadFile(fullPath)
 		if err != nil {
-			slog.Error("could not read template file", "error", err)
+			mudlog.Error("could not read template file", "error", err)
 			return "[TEMPLATE READ ERROR]", err
 		}
 
@@ -129,7 +128,7 @@ func Process(name string, data any, ansiFlags ...AnsiFlag) (string, error) {
 	var buf bytes.Buffer
 	err = cache.tpl.Execute(&buf, data)
 	if err != nil {
-		slog.Error("could not parse template file", "error", err)
+		mudlog.Error("could not parse template file", "error", err)
 		return "[TEMPLATE ERROR]", err
 	}
 
@@ -144,14 +143,26 @@ func Process(name string, data any, ansiFlags ...AnsiFlag) (string, error) {
 const cellPadding int = 1
 
 type TemplateTable struct {
-	Title          string
-	Header         []string
-	Rows           [][]string
-	TrueCellSize   [][]int
-	ColumnCount    int
-	ColumnWidths   []int
-	Formatting     [][]string
-	formatRowCount int
+	Title              string
+	Header             []string
+	Rows               [][]string
+	TrueHeaderCellSize []int
+	TrueCellSize       [][]int
+	ColumnCount        int
+	ColumnWidths       []int
+	Formatting         [][]string
+	formatRowCount     int
+}
+
+func (t TemplateTable) GetHeaderCell(column int) string {
+
+	cellStr := t.Header[column]
+	repeatCt := t.ColumnWidths[column] - t.TrueHeaderCellSize[column]
+	if repeatCt > 0 {
+		cellStr += strings.Repeat(` `, repeatCt)
+	}
+
+	return cellStr
 }
 
 func (t TemplateTable) GetCell(row int, column int) string {
@@ -175,25 +186,29 @@ func (t TemplateTable) GetCell(row int, column int) string {
 func GetTable(title string, headers []string, rows [][]string, formatting ...[]string) TemplateTable {
 
 	var table TemplateTable = TemplateTable{
-		Title:        title,
-		Header:       headers,
-		Rows:         rows,
-		TrueCellSize: [][]int{},
-		ColumnCount:  len(headers),
-		ColumnWidths: make([]int, len(headers)),
-		Formatting:   formatting,
+		Title:              title,
+		Header:             headers,
+		Rows:               rows,
+		TrueHeaderCellSize: []int{},
+		TrueCellSize:       [][]int{},
+		ColumnCount:        len(headers),
+		ColumnWidths:       make([]int, len(headers)),
+		Formatting:         formatting,
 	}
 
 	hdrColCt := len(headers)
 	rowCt := len(rows)
 	table.formatRowCount = len(formatting)
+	table.TrueHeaderCellSize = make([]int, hdrColCt)
 	table.TrueCellSize = make([][]int, rowCt)
 
 	// Get the longest element
 	for i := 0; i < hdrColCt; i++ {
-		if len(headers[i])+1 > table.ColumnWidths[i] {
-			table.ColumnWidths[i] = utf8.RuneCountInString(headers[i])
+		sz := runewidth.StringWidth(headers[i])
+		if sz+1 > table.ColumnWidths[i] {
+			table.ColumnWidths[i] = sz
 		}
+		table.TrueHeaderCellSize[i] = sz
 	}
 
 	// Get the longest element
@@ -209,7 +224,7 @@ func GetTable(title string, headers []string, rows [][]string, formatting ...[]s
 		}
 
 		for c := 0; c < hdrColCt; c++ {
-			sz := utf8.RuneCountInString(ansitags.Parse(rows[r][c], ansitags.StripTags))
+			sz := runewidth.StringWidth(ansitags.Parse(rows[r][c], ansitags.StripTags))
 			if sz+1 > table.ColumnWidths[c] {
 				table.ColumnWidths[c] = sz
 			}
@@ -267,7 +282,7 @@ func AnsiParse(input string) string {
 func LoadAliases() {
 
 	// Get the file info
-	fInfo, err := os.Stat(util.FilePath(string(configs.GetConfig().FolderDataFiles) + `/ansi-aliases.yaml`))
+	fInfo, err := os.Stat(util.FilePath(string(configs.GetFilePathsConfig().FolderDataFiles) + `/ansi-aliases.yaml`))
 	// check if filemtime is not ansiAliasFileModTime
 	if err != nil || fInfo.ModTime() == ansiAliasFileModTime {
 		return
@@ -282,9 +297,9 @@ func LoadAliases() {
 	start := time.Now()
 
 	ansiAliasFileModTime = fInfo.ModTime()
-	if err = ansitags.LoadAliases(util.FilePath(string(configs.GetConfig().FolderDataFiles) + `/ansi-aliases.yaml`)); err != nil {
-		slog.Info("ansitags.LoadAliases()", "changed", true, "Time Taken", time.Since(start), "error", err.Error())
+	if err = ansitags.LoadAliases(util.FilePath(string(configs.GetFilePathsConfig().FolderDataFiles) + `/ansi-aliases.yaml`)); err != nil {
+		mudlog.Info("ansitags.LoadAliases()", "changed", true, "Time Taken", time.Since(start), "error", err.Error())
 	}
 
-	slog.Info("ansitags.LoadAliases()", "changed", true, "Time Taken", time.Since(start))
+	mudlog.Info("ansitags.LoadAliases()", "changed", true, "Time Taken", time.Since(start))
 }

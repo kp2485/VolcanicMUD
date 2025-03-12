@@ -3,7 +3,6 @@ package races
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/volte6/gomud/internal/configs"
 	"github.com/volte6/gomud/internal/fileloader"
 	"github.com/volte6/gomud/internal/items"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/stats"
 	"github.com/volte6/gomud/internal/util"
 	"gopkg.in/yaml.v2"
@@ -164,7 +164,7 @@ func (r *Race) Save() error {
 		return err
 	}
 
-	saveFilePath := util.FilePath(configs.GetConfig().FolderDataFiles.String(), `/`, `races`, `/`, r.Filename())
+	saveFilePath := util.FilePath(configs.GetFilePathsConfig().FolderDataFiles.String(), `/`, `races`, `/`, r.Filename())
 
 	err = os.WriteFile(saveFilePath, bytes, 0644)
 	if err != nil {
@@ -179,13 +179,13 @@ func LoadDataFiles() {
 
 	start := time.Now()
 
-	tmpRaces, err := fileloader.LoadAllFlatFiles[int, *Race](configs.GetConfig().FolderDataFiles.String() + `/races`)
+	tmpRaces, err := fileloader.LoadAllFlatFiles[int, *Race](configs.GetFilePathsConfig().FolderDataFiles.String() + `/races`)
 	if err != nil {
 		panic(err)
 	}
 
 	races = tmpRaces
 
-	slog.Info("races.LoadDataFiles()", "loadedCount", len(races), "Time Taken", time.Since(start))
+	mudlog.Info("races.LoadDataFiles()", "loadedCount", len(races), "Time Taken", time.Since(start))
 
 }

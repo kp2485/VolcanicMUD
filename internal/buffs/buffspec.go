@@ -2,7 +2,6 @@ package buffs
 
 import (
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"github.com/volte6/gomud/internal/configs"
 	"github.com/volte6/gomud/internal/fileloader"
 	"github.com/volte6/gomud/internal/gametime"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/statmods"
 	"github.com/volte6/gomud/internal/util"
 )
@@ -208,7 +208,7 @@ func (b *BuffSpec) GetScriptPath() string {
 	buffFilePath := b.Filename()
 	scriptFilePath := strings.Replace(buffFilePath, `.yaml`, `.js`, 1)
 
-	fullScriptPath := strings.Replace(string(configs.GetConfig().FolderDataFiles)+`/buffs/`+b.Filepath(),
+	fullScriptPath := strings.Replace(string(configs.GetFilePathsConfig().FolderDataFiles)+`/buffs/`+b.Filepath(),
 		buffFilePath,
 		scriptFilePath,
 		1)
@@ -221,12 +221,12 @@ func LoadDataFiles() {
 
 	start := time.Now()
 
-	tmpBuffs, err := fileloader.LoadAllFlatFiles[int, *BuffSpec](string(configs.GetConfig().FolderDataFiles) + `/buffs`)
+	tmpBuffs, err := fileloader.LoadAllFlatFiles[int, *BuffSpec](string(configs.GetFilePathsConfig().FolderDataFiles) + `/buffs`)
 	if err != nil {
 		panic(err)
 	}
 
 	buffs = tmpBuffs
 
-	slog.Info("buffSpec.LoadDataFiles()", "loadedCount", len(buffs), "Time Taken", time.Since(start))
+	mudlog.Info("buffSpec.LoadDataFiles()", "loadedCount", len(buffs), "Time Taken", time.Since(start))
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/items"
 	"github.com/volte6/gomud/internal/rooms"
 	"github.com/volte6/gomud/internal/statmods"
@@ -13,7 +14,7 @@ import (
 	"github.com/volte6/gomud/internal/util"
 )
 
-func Picklock(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Picklock(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
 	lockpickItm := items.Item{}
 	for _, itm := range user.Character.GetAllBackpackItems() {
@@ -93,7 +94,7 @@ func Picklock(rest string, user *users.UserRecord, room *rooms.Room) (bool, erro
 	//
 	keyring_sequence := user.Character.GetKey(lockId)
 
-	sequence := util.GetLockSequence(lockId, lockStrength, string(configs.GetConfig().Seed))
+	sequence := util.GetLockSequence(lockId, lockStrength, string(configs.GetServerConfig().Seed))
 
 	// Calculate any presolve from buffs, gear, pet perks, etc.
 	if len(keyring_sequence) == 0 {

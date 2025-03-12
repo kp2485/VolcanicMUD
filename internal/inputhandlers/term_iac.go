@@ -2,10 +2,11 @@ package inputhandlers
 
 import (
 	"encoding/json"
-	"log/slog"
 	"strings"
 
+	"github.com/volte6/gomud/internal/configs"
 	"github.com/volte6/gomud/internal/connections"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/term"
 )
 
@@ -30,7 +31,7 @@ func TelnetIACHandler(clientInput *connections.ClientInput, sharedState map[stri
 		}
 	}
 
-	//slog.Info("Received", "type", "IAC (TEST)", "data", term.BytesString(clientInput.DataIn))
+	//mudlog.Debug("Received", "type", "IAC (TEST)", "data", term.BytesString(clientInput.DataIn))
 
 	if lastIAC < len(clientInput.DataIn) {
 		iacCmds = append(iacCmds, clientInput.DataIn[lastIAC:])
@@ -42,12 +43,12 @@ func TelnetIACHandler(clientInput *connections.ClientInput, sharedState map[stri
 		if term.IsGMCPCommand(iacCmd) {
 
 			if ok, payload := term.Matches(iacCmd, term.GmcpAccept); ok {
-				slog.Info("Received", "type", "IAC (Client-GMCP Accept)", "data", term.BytesString(payload))
+				mudlog.Debug("Received", "type", "IAC (Client-GMCP Accept)", "data", term.BytesString(payload))
 				continue
 			}
 
 			if ok, payload := term.Matches(iacCmd, term.GmcpRefuse); ok {
-				slog.Info("Received", "type", "IAC (Client-GMCP Refuse)", "data", term.BytesString(payload))
+				mudlog.Debug("Received", "type", "IAC (Client-GMCP Refuse)", "data", term.BytesString(payload))
 				continue
 			}
 
@@ -55,7 +56,7 @@ func TelnetIACHandler(clientInput *connections.ClientInput, sharedState map[stri
 				// Unhanlded IAC command, log it
 
 				requestBody := iacCmd[3 : len(iacCmd)-2]
-				//slog.Info("Received", "type", "GMCP", "size", len(iacCmd), "data", string(requestBody))
+				//mudlog.Debug("Received", "type", "GMCP", "size", len(iacCmd), "data", string(requestBody))
 
 				spaceAt := 0
 				for i := 0; i < len(requestBody); i++ {
@@ -76,11 +77,11 @@ func TelnetIACHandler(clientInput *connections.ClientInput, sharedState map[stri
 				}
 
 				if _, ok := term.SupportedGMCP[command]; !ok {
-					slog.Error("Received", "type", "GMCP (Ignored)", "command", command, "payload", string(payload))
+					mudlog.Error("Received", "type", "GMCP (Ignored)", "command", command, "payload", string(payload))
 					continue
 				}
 
-				slog.Debug("Received", "type", "GMCP (Handling)", "command", command, "payload", string(payload))
+				mudlog.Debug("Received", "type", "GMCP (Handling)", "command", command, "payload", string(payload))
 
 				switch command {
 
@@ -124,7 +125,7 @@ func TelnetIACHandler(clientInput *connections.ClientInput, sharedState map[stri
 				case `Char.Login`:
 					decoded := term.GMCPLogin{}
 					if err := json.Unmarshal(payload, &decoded); err == nil {
-						slog.Info("GMCP LOGIN", "username", decoded.Name, "password", decoded.Password)
+						mudlog.Debug("GMCP LOGIN", "username", decoded.Name, "password", decoded.Password)
 					}
 				}
 
@@ -132,27 +133,67 @@ func TelnetIACHandler(clientInput *connections.ClientInput, sharedState map[stri
 			}
 
 			// Unhanlded IAC command, log it
-			slog.Info("Received", "type", "GMCP?", "size", len(iacCmd), "data", string(iacCmd))
+			mudlog.Debug("Received", "type", "GMCP?", "size", len(iacCmd), "data", string(iacCmd))
+
+			continue
+		}
+
+		if term.IsMSPCommand(iacCmd) {
+
+			if ok, payload := term.Matches(iacCmd, term.MspAccept); ok {
+				mudlog.Debug("Received", "type", "IAC (Client-MSP Accept)", "data", term.BytesString(payload))
+
+				cs := connections.GetClientSettings(clientInput.ConnectionId)
+				cs.MSPEnabled = true
+				connections.OverwriteClientSettings(clientInput.ConnectionId, cs)
+
+				connections.SendTo(
+					term.MspCommand.BytesWithPayload([]byte("!!SOUND(Off U="+configs.GetFilePathsConfig().WebCDNLocation.String()+")")),
+					clientInput.ConnectionId,
+				)
+
+				continue
+			}
+
+			if ok, payload := term.Matches(iacCmd, term.MspRefuse); ok {
+				mudlog.Debug("Received", "type", "IAC (Client-MSP Refuse)", "data", term.BytesString(payload))
+
+				cs := connections.GetClientSettings(clientInput.ConnectionId)
+				cs.MSPEnabled = false
+				connections.OverwriteClientSettings(clientInput.ConnectionId, cs)
+
+				continue
+			}
 
 			continue
 		}
 
 		if ok, payload := term.Matches(iacCmd, term.TelnetAcceptedChangeCharset); ok {
-			slog.Info("Received", "type", "IAC (TelnetAcceptedChangeCharset)", "data", term.BytesString(payload))
+			mudlog.Debug("Received", "type", "IAC (TelnetAcceptedChangeCharset)", "data", term.BytesString(payload))
 			continue
 		}
 
 		if ok, _ := term.Matches(iacCmd, term.TelnetRejectedChangeCharset); ok {
-			slog.Info("Received", "type", "IAC (TelnetRejectedChangeCharset)")
+			mudlog.Debug("Received", "type", "IAC (TelnetRejectedChangeCharset)")
 			continue
 		}
 
 		if ok, _ := term.Matches(iacCmd, term.TelnetAgreeChangeCharset); ok {
-			slog.Info("Received", "type", "IAC (TelnetAgreeChangeCharset)")
+			mudlog.Debug("Received", "type", "IAC (TelnetAgreeChangeCharset)")
 			connections.SendTo(
 				term.TelnetCharset.BytesWithPayload([]byte(" UTF-8")),
 				clientInput.ConnectionId,
 			)
+			continue
+		}
+
+		if ok, _ := term.Matches(iacCmd, term.TelnetDontSuppressGoAhead); ok {
+			mudlog.Debug("Received", "type", "IAC (TelnetDontSuppressGoAhead)")
+
+			cs := connections.GetClientSettings(clientInput.ConnectionId)
+			cs.SendTelnetGoAhead = true
+			connections.OverwriteClientSettings(clientInput.ConnectionId, cs)
+
 			continue
 		}
 
@@ -161,9 +202,9 @@ func TelnetIACHandler(clientInput *connections.ClientInput, sharedState map[stri
 
 			w, h, err := term.TelnetParseScreenSizePayload(payload)
 			if err != nil {
-				slog.Info("Received", "type", "IAC (Screensize)", "data", term.BytesString(payload), "error", err)
+				mudlog.Debug("Received", "type", "IAC (Screensize)", "data", term.BytesString(payload), "error", err)
 			} else {
-				slog.Info("Received", "type", "IAC (Screensize)", "width", w, "height", h)
+				mudlog.Debug("Received", "type", "IAC (Screensize)", "width", w, "height", h)
 
 				if err == nil {
 
@@ -180,7 +221,7 @@ func TelnetIACHandler(clientInput *connections.ClientInput, sharedState map[stri
 		}
 
 		// Unhanlded IAC command, log it
-		slog.Info("Received", "type", "IAC (Unhandled)", "size", len(clientInput.DataIn), "data", term.TelnetCommandToString(iacCmd))
+		mudlog.Debug("Received", "type", "IAC (Unhandled)", "size", len(clientInput.DataIn), "data", term.TelnetCommandToString(iacCmd))
 
 	}
 

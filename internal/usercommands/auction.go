@@ -6,13 +6,14 @@ import (
 	"strings"
 
 	"github.com/volte6/gomud/internal/auctions"
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/rooms"
 	"github.com/volte6/gomud/internal/templates"
 	"github.com/volte6/gomud/internal/users"
 	"github.com/volte6/gomud/internal/util"
 )
 
-func Auction(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Auction(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
 	if on := user.GetConfigOption(`auction`); on != nil && !on.(bool) {
 
@@ -135,6 +136,22 @@ func Auction(rest string, user *users.UserRecord, room *rooms.Room) (bool, error
 			}
 		}
 
+		sellerName := currentAuction.SellerName
+		buyerName := currentAuction.HighestBidderName
+		if currentAuction.Anonymous {
+			sellerName = `Someone`
+			buyerName = `Someone`
+		}
+
+		events.AddToQueue(events.Auction{
+			State:           `BID`,
+			ItemName:        currentAuction.ItemData.NameComplex(),
+			ItemDescription: currentAuction.ItemData.GetSpec().Description,
+			SellerName:      sellerName,
+			BuyerName:       buyerName,
+			BidAmount:       currentAuction.HighestBid,
+		})
+
 		return true, nil
 	}
 
@@ -182,6 +199,13 @@ func Auction(rest string, user *users.UserRecord, room *rooms.Room) (bool, error
 
 	if auctions.StartAuction(matchItem, user.UserId, amt) {
 		user.Character.RemoveItem(matchItem)
+
+		events.AddToQueue(events.ItemOwnership{
+			UserId: user.UserId,
+			Item:   matchItem,
+			Gained: false,
+		})
+
 	}
 
 	return true, nil

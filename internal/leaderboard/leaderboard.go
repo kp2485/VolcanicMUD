@@ -1,13 +1,13 @@
 package leaderboard
 
 import (
-	"log/slog"
 	"math"
 	"sync"
 	"time"
 
 	"github.com/volte6/gomud/internal/characters"
 	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/skills"
 	"github.com/volte6/gomud/internal/users"
 )
@@ -42,7 +42,7 @@ func Update() map[string]Leaderboard {
 	userCount := 0
 	characterCount := 0
 
-	lSize := int(configs.GetConfig().LeaderboardSize)
+	lSize := int(configs.GetStatisticsConfig().LeaderboardSize)
 
 	// Check online users
 	for _, u := range users.GetAllActiveUsers() {
@@ -70,7 +70,7 @@ func Update() map[string]Leaderboard {
 		lbCopy[name] = append(Leaderboard{}, lbEntries...)
 	}
 
-	slog.Info("leaderboard.Update()", "user-processed", userCount, "characters-processed", characterCount, "Time Taken", time.Since(start))
+	mudlog.Info("leaderboard.Update()", "user-processed", userCount, "characters-processed", characterCount, "Time Taken", time.Since(start))
 
 	return lbCopy
 }
@@ -98,7 +98,7 @@ func Get() map[string]Leaderboard {
 
 func considerUser(u *users.UserRecord) bool {
 
-	lSize := int(configs.GetConfig().LeaderboardSize)
+	lSize := int(configs.GetStatisticsConfig().LeaderboardSize)
 
 	allChars := []characters.Character{}
 	allChars = append(allChars, *u.Character)

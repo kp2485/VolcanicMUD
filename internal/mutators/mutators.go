@@ -2,7 +2,6 @@ package mutators
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/volte6/gomud/internal/exit"
 	"github.com/volte6/gomud/internal/fileloader"
 	"github.com/volte6/gomud/internal/gametime"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/util"
 	"gopkg.in/yaml.v2"
 )
@@ -287,7 +287,7 @@ func (m *MutatorSpec) Save() error {
 		return err
 	}
 
-	saveFilePath := util.FilePath(configs.GetConfig().FolderDataFiles.String(), `/`, `mutators`, `/`, fmt.Sprintf("%s.yaml", fileName))
+	saveFilePath := util.FilePath(configs.GetFilePathsConfig().FolderDataFiles.String(), `/`, `mutators`, `/`, fmt.Sprintf("%s.yaml", fileName))
 
 	err = os.WriteFile(saveFilePath, bytes, 0644)
 	if err != nil {
@@ -323,12 +323,12 @@ func LoadDataFiles() {
 
 	start := time.Now()
 
-	tmpMutators, err := fileloader.LoadAllFlatFiles[string, *MutatorSpec](configs.GetConfig().FolderDataFiles.String() + `/mutators`)
+	tmpMutators, err := fileloader.LoadAllFlatFiles[string, *MutatorSpec](configs.GetFilePathsConfig().FolderDataFiles.String() + `/mutators`)
 	if err != nil {
 		panic(err)
 	}
 
 	allMutators = tmpMutators
 
-	slog.Info("mutators.LoadDataFiles()", "loadedCount", len(allMutators), "Time Taken", time.Since(start))
+	mudlog.Info("mutators.LoadDataFiles()", "loadedCount", len(allMutators), "Time Taken", time.Since(start))
 }

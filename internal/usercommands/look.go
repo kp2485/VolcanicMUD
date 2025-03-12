@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"github.com/volte6/gomud/internal/buffs"
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/gametime"
+	"github.com/volte6/gomud/internal/items"
 	"github.com/volte6/gomud/internal/keywords"
 	"github.com/volte6/gomud/internal/mobs"
 	"github.com/volte6/gomud/internal/rooms"
@@ -13,13 +15,9 @@ import (
 	"github.com/volte6/gomud/internal/users"
 )
 
-func Look(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Look(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
-	secretLook := false
-	if strings.HasPrefix(rest, "secretly") {
-		secretLook = true
-		rest = strings.TrimSpace(strings.TrimPrefix(rest, "secretly"))
-	}
+	secretLook := flags.Has(events.CmdSecretly)
 
 	visibility := room.GetVisibility()
 
@@ -45,6 +43,13 @@ func Look(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 	}
 
 	lookAt := rest
+
+	events.AddToQueue(events.Looking{
+		UserId: user.UserId,
+		RoomId: room.RoomId,
+		Target: lookAt,
+		Hidden: isSneaking,
+	})
 
 	// Handle an ordinary look with no target
 	if len(lookAt) == 0 {
@@ -142,6 +147,9 @@ func Look(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 	containerName := room.FindContainerByName(lookAt)
 	if containerName != `` {
 
+		itemNames := []string{}
+		itemNamesFormatted := []string{}
+
 		container := room.Containers[containerName]
 
 		if container.Lock.IsLocked() {
@@ -151,10 +159,9 @@ func Look(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 			return true, nil
 		}
 
-		chestStuff := []string{}
-
 		if container.Gold > 0 {
-			chestStuff = append(chestStuff, fmt.Sprintf(`<ansi fg="gold">%d gold</ansi>`, container.Gold))
+			itemNames = append(itemNames, fmt.Sprintf(`%d gold`, container.Gold))
+			itemNamesFormatted = append(itemNamesFormatted, fmt.Sprintf(`<ansi fg="gold">%d gold</ansi>`, container.Gold))
 		}
 
 		for _, item := range container.Items {
@@ -162,13 +169,55 @@ func Look(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 				room.RemoveItem(item, false)
 				continue
 			}
-			chestStuff = append(chestStuff, item.DisplayName())
+
+			itemNames = append(itemNames, item.Name())
+			itemNamesFormatted = append(itemNamesFormatted, fmt.Sprintf(`<ansi fg="itemname">%s</ansi>`, item.DisplayName()))
+		}
+
+		if len(container.Recipes) > 0 {
+
+			user.SendText(``)
+			user.SendText(fmt.Sprintf(`You can <ansi fg="command">use</ansi> the <ansi fg="container">%s</ansi> if you put the following objects inside:`, containerName))
+
+			for finalItemId, recipeList := range container.Recipes {
+
+				neededItems := map[int]int{}
+
+				for _, inputItemId := range recipeList {
+					neededItems[inputItemId] += 1
+				}
+
+				user.SendText(``)
+
+				finalItem := items.New(finalItemId)
+				user.SendText(fmt.Sprintf(`    <ansi fg="230">To receive 1 <ansi fg="itemname">%s</ansi>:</ansi> `, finalItem.DisplayName()))
+
+				for inputItemId, qtyNeeded := range neededItems {
+					tmpItem := items.New(inputItemId)
+					totalContained := container.Count(inputItemId)
+					colorClass := "8" // None fulfilled
+					if totalContained == qtyNeeded {
+						colorClass = "10"
+					} else if totalContained > 0 {
+						colorClass = "3"
+					}
+					user.SendText(fmt.Sprintf(`        <ansi fg="%s">[%d/%d]</ansi> <ansi fg="itemname">%s</ansi>`, colorClass, totalContained, qtyNeeded, tmpItem.DisplayName()))
+				}
+
+			}
+
+		}
+
+		chestStuff := map[string]any{
+			`ItemNames`:          itemNames,
+			`ItemNamesFormatted`: itemNamesFormatted,
 		}
 
 		textOut, _ := templates.Process("descriptions/insidecontainer", chestStuff)
 
 		user.SendText(``)
 		user.SendText(textOut)
+		user.SendText(``)
 
 		return true, nil
 	}

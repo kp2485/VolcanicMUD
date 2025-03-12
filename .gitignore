@@ -1,4 +1,8 @@
 .vscode
 private-notes.txt
-**/users/*
+_datafiles/**/users/*
 **/config-overrides.yaml
+**/.roundcount
+vendor/
+server.crt
+server.key

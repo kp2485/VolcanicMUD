@@ -2,7 +2,6 @@ package mobs
 
 import (
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"strings"
@@ -12,8 +11,8 @@ import (
 	"github.com/volte6/gomud/internal/characters"
 	"github.com/volte6/gomud/internal/configs"
 	"github.com/volte6/gomud/internal/conversations"
-
 	"github.com/volte6/gomud/internal/events"
+	"github.com/volte6/gomud/internal/mudlog"
 
 	"github.com/volte6/gomud/internal/fileloader"
 	"github.com/volte6/gomud/internal/items"
@@ -29,6 +28,8 @@ var (
 	mobInstances        = map[int]*Mob{}
 	mobsHatePlayers     = map[string]map[int]int{}
 	mobNameCache        = map[MobId]string{}
+
+	recentlyDied = map[int]int{}
 )
 
 type ItemTrade struct {
@@ -96,6 +97,25 @@ func GetAllMobInfo() []Mob {
 
 func GetAllMobNames() []string {
 	return append([]string{}, allMobNames...)
+}
+
+func TrackRecentDeath(instanceId int) {
+	recentlyDied[instanceId] = int(util.GetRoundCount())
+}
+func RecentlyDied(instanceId int) bool {
+
+	if len(recentlyDied) > 30 {
+		roundNow := int(util.GetRoundCount())
+		for k, v := range recentlyDied {
+			if roundNow-v > 15 {
+				delete(recentlyDied, k)
+			}
+		}
+	}
+
+	_, ok := recentlyDied[instanceId]
+
+	return ok
 }
 
 func MobIdByName(mobName string) MobId {
@@ -302,23 +322,23 @@ func (m *Mob) Converse() {
 
 // Cause the mob to basically wait and do nothing for x seconds
 func (m *Mob) Sleep(seconds int) {
-	turnCount := seconds * configs.GetConfig().TurnsPerSecond()
-	m.Command(`noop`, turnCount)
+	m.Command(`noop`, float64(seconds))
 }
 
-func (m *Mob) Command(inputTxt string, waitTurns ...int) {
+func (m *Mob) Command(inputTxt string, waitSeconds ...float64) {
 
-	wt := 0
-	if len(waitTurns) > 0 {
-		wt = waitTurns[0]
+	readyTurn := util.GetTurnCount()
+	if len(waitSeconds) > 0 {
+		readyTurn += uint64(float64(configs.GetTimingConfig().SecondsToTurns(1)) * waitSeconds[0])
 	}
 
 	for _, cmd := range strings.Split(inputTxt, `;`) {
 		events.AddToQueue(events.Input{
 			MobInstanceId: m.InstanceId,
 			InputText:     cmd,
-			WaitTurns:     wt,
+			ReadyTurn:     readyTurn,
 		})
+		readyTurn++
 	}
 
 }
@@ -596,7 +616,7 @@ func (r *Mob) Save() error {
 		return err
 	}
 
-	saveFilePath := util.FilePath(configs.GetConfig().FolderDataFiles.String(), `/`, `mobs`, `/`, fmt.Sprintf("%s.yaml", fileName))
+	saveFilePath := util.FilePath(configs.GetFilePathsConfig().FolderDataFiles.String(), `/`, `mobs`, `/`, fmt.Sprintf("%s.yaml", fileName))
 
 	err = os.WriteFile(saveFilePath, bytes, 0644)
 	if err != nil {
@@ -641,12 +661,12 @@ func (m *Mob) GetScriptPath() string {
 	}
 
 	scriptFilePath := `scripts/` + strings.Replace(mobFilePath, `.yaml`, newExt, 1)
-	fullScriptPath := strings.Replace(configs.GetConfig().FolderDataFiles.String()+`/mobs/`+m.Filepath(),
+	fullScriptPath := strings.Replace(configs.GetFilePathsConfig().FolderDataFiles.String()+`/mobs/`+m.Filepath(),
 		mobFilePath,
 		scriptFilePath,
 		1)
 
-	//slog.Info("SCRIPT PATH", "path", util.FilePath(fullScriptPath))
+	//mudlog.Info("SCRIPT PATH", "path", util.FilePath(fullScriptPath))
 	return util.FilePath(fullScriptPath)
 }
 
@@ -707,7 +727,7 @@ func LoadDataFiles() {
 
 	start := time.Now()
 
-	tmpMobs, err := fileloader.LoadAllFlatFiles[int, *Mob](configs.GetConfig().FolderDataFiles.String() + `/mobs`)
+	tmpMobs, err := fileloader.LoadAllFlatFiles[int, *Mob](configs.GetFilePathsConfig().FolderDataFiles.String() + `/mobs`)
 	if err != nil {
 		panic(err)
 	}
@@ -723,6 +743,6 @@ func LoadDataFiles() {
 		mobNameCache[mob.MobId] = mob.Character.Name
 	}
 
-	slog.Info("mobs.LoadDataFiles()", "loadedCount", len(mobs), "Time Taken", time.Since(start))
+	mudlog.Info("mobs.LoadDataFiles()", "loadedCount", len(mobs), "Time Taken", time.Since(start))
 
 }

@@ -3,6 +3,7 @@ package usercommands
 import (
 	"errors"
 
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/rooms"
 	"github.com/volte6/gomud/internal/skills"
 	"github.com/volte6/gomud/internal/users"
@@ -15,7 +16,7 @@ Level 2 - Occasionaly you will attack with both weapons in one round.
 Level 3 - You will always attack with both weapons when Dual wielding.
 Level 4 - Dual wielding incurs fewer penalties
 */
-func DualWield(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func DualWield(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
 	skillLevel := user.Character.GetSkillLevel(skills.DualWield)
 
@@ -24,6 +25,6 @@ func DualWield(rest string, user *users.UserRecord, room *rooms.Room) (bool, err
 		return true, errors.New(`you haven't learned how to dual wield`)
 	}
 
-	return Help(`dual-wield`, user, room)
+	return Help(`dual-wield`, user, room, flags)
 
 }

@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/keywords"
 	"github.com/volte6/gomud/internal/races"
 	"github.com/volte6/gomud/internal/rooms"
@@ -15,7 +16,7 @@ import (
 	"github.com/volte6/gomud/internal/util"
 )
 
-func Help(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Help(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
 	var helpTxt string
 	var err error = nil
@@ -87,9 +88,12 @@ func Help(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 		}
 
 		// replace any non alpha/numeric characters in "rest"
-		helpName = regexp.MustCompile(`[^a-zA-Z0-9\\-]+`).ReplaceAllString(helpName, ``)
-
-		helpName = keywords.TryHelpAlias(helpName)
+		if fullSearchAlias := keywords.TryHelpAlias(rest); fullSearchAlias != rest {
+			helpName = fullSearchAlias
+		} else {
+			helpName = regexp.MustCompile(`[^a-zA-Z0-9\\-]+`).ReplaceAllString(helpName, ``)
+			helpName = keywords.TryHelpAlias(helpName)
+		}
 
 		var helpVars any = nil
 

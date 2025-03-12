@@ -2,7 +2,6 @@ package items
 
 import (
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 	"github.com/volte6/gomud/internal/buffs"
 	"github.com/volte6/gomud/internal/configs"
 	"github.com/volte6/gomud/internal/fileloader"
+	"github.com/volte6/gomud/internal/mudlog"
 	"github.com/volte6/gomud/internal/statmods"
 	"github.com/volte6/gomud/internal/util"
 )
@@ -40,7 +40,9 @@ type ItemTypeInfo struct {
 func ItemTypes() []ItemTypeInfo {
 	return []ItemTypeInfo{
 		// Equipment
+		// Equipment - Weapons
 		{string(Weapon), `This can be wielded as a weapon.`, 0, 10000, 19999},
+		// Equipment - Armor
 		{string(Offhand), `This can be worn in the offhand.`, 0, 20000, 29999},
 		{string(Head), `This can be worn in the players head equipment slot.`, 0, 20000, 29999},
 		{string(Neck), `This can be worn in the players neck equipment slot.`, 0, 20000, 29999},
@@ -262,6 +264,20 @@ func FindItem(nameOrId string) int {
 	return FindItemByName(nameOrId)
 }
 
+func FindKeyByLockId(lockId string) int {
+
+	for _, item := range items {
+		if item.Type != Key {
+			continue
+		}
+		if item.KeyLockId == lockId {
+			return item.ItemId
+		}
+	}
+
+	return 0
+}
+
 func FindItemByName(name string) int {
 	name = strings.ToLower(name)
 
@@ -435,7 +451,7 @@ func (i ItemSpec) GetScript() string {
 
 func (i *ItemSpec) GetScriptPath() string {
 	// Load any script for the room
-	return strings.Replace(string(configs.GetConfig().FolderDataFiles)+`/items/`+i.Filepath(), `.yaml`, `.js`, 1)
+	return strings.Replace(string(configs.GetFilePathsConfig().FolderDataFiles)+`/items/`+i.Filepath(), `.yaml`, `.js`, 1)
 }
 
 func GetItemSpec(itemId int) *ItemSpec {
@@ -453,20 +469,20 @@ func LoadDataFiles() {
 
 	start := time.Now()
 
-	tmpItems, err := fileloader.LoadAllFlatFiles[int, *ItemSpec](string(configs.GetConfig().FolderDataFiles) + `/items`)
+	tmpItems, err := fileloader.LoadAllFlatFiles[int, *ItemSpec](string(configs.GetFilePathsConfig().FolderDataFiles) + `/items`)
 	if err != nil {
 		panic(err)
 	}
 
 	items = tmpItems
 
-	tmpAttackMessages, err := fileloader.LoadAllFlatFiles[ItemSubType, *WeaponAttackMessageGroup](string(configs.GetConfig().FolderDataFiles) + `/combat-messages`)
+	tmpAttackMessages, err := fileloader.LoadAllFlatFiles[ItemSubType, *WeaponAttackMessageGroup](string(configs.GetFilePathsConfig().FolderDataFiles) + `/combat-messages`)
 	if err != nil {
 		panic(err)
 	}
 
 	attackMessages = tmpAttackMessages
 
-	slog.Info("itemspec.LoadDataFiles()", "itemLoadedCount", len(items), "attackMessageCount", len(attackMessages), "Time Taken", time.Since(start))
+	mudlog.Info("itemspec.LoadDataFiles()", "itemLoadedCount", len(items), "attackMessageCount", len(attackMessages), "Time Taken", time.Since(start))
 
 }

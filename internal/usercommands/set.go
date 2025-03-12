@@ -5,14 +5,17 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/volte6/gomud/internal/configs"
+	"github.com/volte6/gomud/internal/events"
 	"github.com/volte6/gomud/internal/rooms"
 	"github.com/volte6/gomud/internal/users"
 	"github.com/volte6/gomud/internal/util"
 )
 
-func Set(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
+func Set(rest string, user *users.UserRecord, room *rooms.Room, flags events.EventFlag) (bool, error) {
 
 	args := util.SplitButRespectQuotes(strings.ToLower(rest))
+	c := configs.GetTextFormatsConfig()
 
 	if len(args) == 0 {
 
@@ -49,7 +52,7 @@ func Set(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 
 		currentPrompt := user.GetConfigOption(`prompt`)
 		if currentPrompt == nil {
-			currentPrompt = users.PromptDefault
+			currentPrompt = c.Prompt.String()
 		}
 		user.SendText(`<ansi fg="yellow-bold">prompt: </ansi> `)
 		user.SendText(currentPrompt.(string))
@@ -57,7 +60,7 @@ func Set(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 
 		currentPrompt = user.GetConfigOption(`fprompt`)
 		if currentPrompt == nil {
-			currentPrompt = users.PromptDefault
+			currentPrompt = c.Prompt.String()
 		}
 		user.SendText(`<ansi fg="yellow-bold">fprompt:</ansi> `)
 		user.SendText(currentPrompt.(string))
@@ -147,7 +150,7 @@ func Set(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 		if len(args) < 1 {
 			currentPrompt := user.GetConfigOption(`prompt`)
 			if currentPrompt == nil {
-				currentPrompt = users.PromptDefault
+				currentPrompt = c.Prompt.String()
 			}
 			user.SendText("Your current prompt:\n")
 			user.SendText(currentPrompt.(string))
@@ -160,8 +163,8 @@ func Set(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 		if promptStr == `default` {
 			user.SetConfigOption(`prompt`, nil)
 			user.SetConfigOption(`prompt-compiled`, nil)
-			user.SetConfigOption(`prompt`, users.PromptDefault)
-			user.SetConfigOption(`prompt-compiled`, util.ConvertColorShortTags(users.PromptDefault))
+			user.SetConfigOption(`prompt`, c.Prompt.String())
+			user.SetConfigOption(`prompt-compiled`, util.ConvertColorShortTags(c.Prompt.String()))
 		} else if promptStr == `none` {
 			user.SetConfigOption(`prompt`, ``)
 			user.SetConfigOption(`prompt-compiled`, ``)
@@ -180,7 +183,7 @@ func Set(rest string, user *users.UserRecord, room *rooms.Room) (bool, error) {
 		if len(args) < 1 {
 			currentPrompt := user.GetConfigOption(`fprompt`)
 			if currentPrompt == nil {
-				currentPrompt = users.PromptDefault
+				currentPrompt = c.Prompt.String()
 			}
 			user.SendText("Your current fprompt:\n")
 			user.SendText(currentPrompt.(string))
